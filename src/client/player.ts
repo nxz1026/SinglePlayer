@@ -146,25 +146,28 @@ export function currentLyricLines(): LyricLine[] {
 }
 
 async function resolveAndPlay(track: Track): Promise<void> {
-  set({ loadingUrl: true, error: '', currentTime: 0, duration: track.durationMs / 1000 })
+  set({ loadingUrl: true, error: '', note: '', currentTime: 0, duration: track.durationMs / 1000 })
   try {
     const quality = getQualityPref()
-    const result = await api.songUrl(track.id, quality, track.mediaMid)
+    let result = await api.songUrl(track.id, quality, track.mediaMid)
+    // 同平台音质自动降级：偏好档拿不到就降到标准档再试。
+    if (!result.url && quality !== 'standard') {
+      result = await api.songUrl(track.id, 'standard', track.mediaMid)
+      if (result.url) set({ note: '已降级为标准音质' })
+    }
     if (!result.url) {
       // 跨平台音源回退：当前平台取流失败时，尝试另一平台的同名曲目。
       const fallback = await findFallback(track, quality)
       if (fallback) {
-        set({ loadingUrl: false, error: '', note: `已切换音源（${fallback.provider}）` })
         replaceCurrent(fallback)
         return
       }
       const friendly = /VIP|未登录/.test(result.reason ?? '')
-        ? 'VIP 曲目：请在「账号」页登录后播放'
+        ? `VIP 曲目：请在「账号」页登录${track.provider === 'qq' ? ' QQ' : ''}后播放`
         : result.reason ?? '无法获取播放地址'
       set({ loadingUrl: false, error: friendly })
       return
     }
-    set({ note: '' })
     currentTrackId = track.id
     audio.src = audioProxyUrl(result.url)
     audio.play().catch(() => set({ error: '浏览器阻止了自动播放，请再点一次' }))
@@ -180,11 +183,21 @@ async function findFallback(track: Track, quality: string): Promise<Track | unde
   const other = track.provider === 'qq' ? 'netease' : 'qq'
   try {
     const { tracks } = await api.search(`${track.name} ${track.artists[0] ?? ''}`.trim(), 8)
-    const candidates = tracks.filter(item =>
-      item.provider === other && normalizeName(item.name) === normalizeName(track.name))
-    for (const candidate of candidates.slice(0, 2)) {
-      const probe = await api.songUrl(candidate.id, quality, candidate.mediaMid)
-      if (probe.url) return candidate
+    const wanted = normalizeName(track.name)
+    const candidates = tracks.filter(item => {
+      if (item.provider !== other) return false
+      const name = normalizeName(item.name)
+      return name.includes(wanted) || wanted.includes(name)
+    })
+    for (const candidate of candidates.slice(0, 3)) {
+      let probe = await api.songUrl(candidate.id, quality, candidate.mediaMid)
+      if (!probe.url && quality !== 'standard') {
+        probe = await api.songUrl(candidate.id, 'standard', candidate.mediaMid)
+      }
+      if (probe.url) {
+        set({ note: `已切换音源（${candidate.provider}）` })
+        return candidate
+      }
     }
   } catch { /* 回退尽力而为 */ }
   return undefined

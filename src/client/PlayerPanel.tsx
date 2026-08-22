@@ -390,6 +390,7 @@ function NowPlaying(): React.ReactElement | null {
   const duration = usePlayer(s => s.duration)
   const loadingUrl = usePlayer(s => s.loadingUrl)
   const error = usePlayer(s => s.error)
+  const note = usePlayer(s => s.note)
   const volume = usePlayer(s => s.volume)
   const mode = usePlayer(s => s.mode)
   const lyricCurrent = usePlayer(s => {
@@ -429,6 +430,7 @@ function NowPlaying(): React.ReactElement | null {
       />
       <div className="dshm-times"><span>{fmt(currentTime)}</span><span>{fmt(duration)}</span></div>
       {error && <div className="dshm-err">{error}</div>}
+      {!error && note && <div className="dshm-note dshm-note-ok">{note}</div>}
       <div className="dshm-controls">
         <button type="button" className="dshm-icon" onClick={cycleMode} title="播放模式">{MODE_LABEL[mode]}</button>
         <button type="button" className="dshm-icon" onClick={prev}>⏮</button>

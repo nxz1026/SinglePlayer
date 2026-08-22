@@ -1,9 +1,9 @@
-﻿/** 宿主半 HTTP 路由 —— 平台 BFF、音频代理、登录态管理。 */
+/** 宿主半 HTTP 路由 —— 平台 BFF、音频代理、登录态管理。 */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import { logError, logInfo } from './log.ts'
+import { logError, logInfo, logWarn } from './log.ts'
 import { proxyAudio } from './proxy/audio.ts'
 import * as netease from './providers/netease.ts'
 import * as qq from './providers/qq.ts'
@@ -104,11 +104,19 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       const parsed = parseTrackId(query.get('id') ?? '')
       if (!parsed) throw new Error('bad track id（期望 netease:<id> 或 qq:<mid>）')
       const quality = (query.get('quality') ?? 'exhigh') as Quality | string
+      let result
       if (parsed.provider === 'netease') {
-        return { result: await netease.songUrl(parsed.songId, normalizeQuality(quality)) }
+        result = await netease.songUrl(parsed.songId, normalizeQuality(quality))
+      } else {
+        const mediaMid = query.get('mediaMid') ?? ''
+        result = await qq.songUrl(parsed.songId, quality, mediaMid)
       }
-      const mediaMid = query.get('mediaMid') ?? ''
-      return { result: await qq.songUrl(parsed.songId, quality, mediaMid) }
+      if (result.url) {
+        logInfo(`url ok ${parsed.provider}:${parsed.songId} level=${result.quality ?? '?'}`)
+      } else {
+        logWarn(`url miss ${parsed.provider}:${parsed.songId} q=${quality}: ${result.reason ?? 'unknown'}`)
+      }
+      return { result }
     }),
 
     get(`${API_PREFIX}/lyric`, async query => {
