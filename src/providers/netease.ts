@@ -172,3 +172,24 @@ export async function authStatus(): Promise<AuthStatusItem> {
   }
   return item
 }
+
+/** 红心收藏（需登录）。 */
+export async function like(songId: string, liked: boolean): Promise<{ liked: boolean }> {
+  const cookie = loadAuth().neteaseCookie
+  if (!cookie) throw new Error('网易云未登录')
+  await invoke(lib.like, { id: songId.replace(/\D/g, ''), like: liked, cookie, timestamp: Date.now() })
+  return { liked }
+}
+
+/** 查询红心状态。 */
+export async function likeCheck(songId: string): Promise<{ liked: boolean }> {
+  const cookie = loadAuth().neteaseCookie
+  if (!cookie) return { liked: false }
+  try {
+    const r = await invoke<NcmResult>(lib.song_like_check, { id: songId.replace(/\D/g, ''), cookie })
+    const songs: AnyRecord[] = Array.isArray(r.body?.songs) ? r.body.songs : []
+    return { liked: songs[0]?.liked === true }
+  } catch {
+    return { liked: false }
+  }
+}

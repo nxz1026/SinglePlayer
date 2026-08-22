@@ -1,4 +1,4 @@
-/** 宿主半 HTTP 路由 —— 平台 BFF、音频代理、登录态管理。 */
+﻿/** 宿主半 HTTP 路由 —— 平台 BFF、音频代理、登录态管理。 */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -77,6 +77,7 @@ export function makeRoutes(ctx: Context): WebRoute[] {
   })
 
   return [
+    get(`${API_PREFIX}/health`, async () => ({ plugin: 'dsh-music-huazai', version: '0.1.0', milestone: 'M3' })),
     get(`${API_PREFIX}/search`, async query => {
       const keyword = query.get('keyword') ?? ''
       const limit = Number(query.get('limit') ?? 12) || 12
@@ -152,6 +153,18 @@ export function makeRoutes(ctx: Context): WebRoute[] {
           { provider: 'qq', loggedIn: !!qqUin },
         ],
       }
+    }),
+
+    // ---- 网易红心收藏 ----
+    post(`${API_PREFIX}/like/set`, async body => {
+      const parsed = parseTrackId(String(body.id ?? ''))
+      if (!parsed || parsed.provider !== 'netease') throw new Error('仅支持 netease:<id>')
+      return netease.like(parsed.songId, body.liked === true)
+    }),
+    get(`${API_PREFIX}/like/check`, async query => {
+      const parsed = parseTrackId(query.get('id') ?? '')
+      if (!parsed || parsed.provider !== 'netease') return { liked: false }
+      return netease.likeCheck(parsed.songId)
     }),
   ]
 }
