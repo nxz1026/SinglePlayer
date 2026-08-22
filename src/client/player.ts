@@ -4,7 +4,8 @@
  */
 
 import { useSyncExternalStore } from 'react'
-import { api, audioProxyUrl } from './api.ts'
+import { api, audioProxyUrl, bridgePoll, bridgeReport } from './api.ts'
+import type { NowPlayingReport } from './api.ts'
 import type { LyricPayload, Track } from '../providers/types.ts'
 
 export type PlayMode = 'order' | 'repeat' | 'one'
@@ -263,4 +264,62 @@ export function audioCurrentTime(): number {
 
 export function isPlaying(): boolean {
   return !audio.paused && !audio.ended
+}
+
+// ---------------------------------------------------------------- AI 桥
+
+const BRIDGE_FLAG = '__dshMusicBridgeStarted'
+const POLL_MS = 2000
+
+/**
+ * 启动浏览器↔宿主桥：每 2s 上报播放状态并取走 AI 下发的命令。
+ * 幂等；面板是否展开不影响。
+ */
+export function startAiBridge(): void {
+  const flags = globalThis as Record<string, unknown>
+  if (flags[BRIDGE_FLAG] === true) return
+  flags[BRIDGE_FLAG] = true
+
+  window.setInterval(() => {
+    void bridgePoll().then(commands => {
+      for (const command of commands) executeCommand(command)
+    })
+    if (state.index >= 0) {
+      const track = state.queue[state.index]
+      if (track) {
+        const report: NowPlayingReport = {
+          trackId: track.id,
+          name: track.name,
+          artists: track.artists,
+          album: track.album,
+          provider: track.provider,
+          positionSec: audio.currentTime,
+          durationSec: audio.duration || track.durationMs / 1000,
+          playing: !audio.paused,
+        }
+        void bridgeReport(report)
+      }
+    }
+  }, POLL_MS)
+}
+
+function executeCommand(command: { type: 'play' | 'pause' | 'resume' | 'next' | 'prev'; track?: Track }): void {
+  switch (command.type) {
+    case 'play':
+      if (command.track) playTrack(command.track)
+      else toggle()
+      break
+    case 'pause':
+      audio.pause()
+      break
+    case 'resume':
+      void audio.play().catch(() => {})
+      break
+    case 'next':
+      next()
+      break
+    case 'prev':
+      prev()
+      break
+  }
 }

@@ -7,6 +7,8 @@ import { proxyAudio } from './proxy/audio.ts'
 import * as netease from './providers/netease.ts'
 import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
+import { drainCommands, nowPlayingSnapshot, pushCommand, reportNowPlaying } from './bridge.ts'
+import type { BridgeCommand, NowPlayingReport } from './bridge.ts'
 import type { ProviderId, Quality } from './providers/types.ts'
 import { loadAuth, saveAuth } from './store/auth.ts'
 
@@ -77,7 +79,7 @@ export function makeRoutes(ctx: Context): WebRoute[] {
   })
 
   return [
-    get(`${API_PREFIX}/health`, async () => ({ plugin: 'dsh-music-huazai', version: '0.1.0', milestone: 'M3' })),
+    get(`${API_PREFIX}/health`, async () => ({ plugin: 'dsh-music-huazai', version: '0.1.0', milestone: 'M5' })),
     get(`${API_PREFIX}/search`, async query => {
       const keyword = query.get('keyword') ?? ''
       const limit = Number(query.get('limit') ?? 12) || 12
@@ -166,6 +168,30 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       if (!parsed || parsed.provider !== 'netease') return { liked: false }
       return netease.likeCheck(parsed.songId)
     }),
+
+    // ---- 浏览器↔宿主桥（AI 工具的执行通道） ----
+    post(`${API_PREFIX}/bridge/report`, async body => {
+      const raw = body.nowPlaying as Partial<NowPlayingReport> | undefined
+      if (raw && typeof raw.trackId === 'string') {
+        reportNowPlaying({
+          trackId: raw.trackId,
+          name: String(raw.name ?? ''),
+          artists: Array.isArray(raw.artists) ? raw.artists.map(String) : [],
+          album: String(raw.album ?? ''),
+          provider: String(raw.provider ?? ''),
+          positionSec: Number(raw.positionSec) || 0,
+          durationSec: Number(raw.durationSec) || 0,
+          playing: raw.playing === true,
+        })
+      }
+      return {}
+    }),
+    get(`${API_PREFIX}/bridge/poll`, async () => ({ commands: drainCommands() })),
+    post(`${API_PREFIX}/bridge/command`, async body => {
+      const command = normalizeCommand(body)
+      if (!command) throw new Error('bad command')
+      return { queued: pushCommand(command) }
+    }),
   ]
 }
 
@@ -191,6 +217,18 @@ function extractQQUin(cookieText: string): string {
     if ((key === 'uin' || key === 'wxuin' || key === 'p_uin') && rest.join('=')) return rest.join('=')
   }
   return ''
+}
+
+/** 宽松校验桥命令（工具侧也可直接调 pushCommand，此入口供调试）。 */
+function normalizeCommand(body: Record<string, unknown>): BridgeCommand | undefined {
+  const type = String(body.type ?? '')
+  if (type === 'pause' || type === 'resume' || type === 'next' || type === 'prev') return { type }
+  return undefined
+}
+
+/** 工具层读取正在播放快照。 */
+export function getNowPlaying(): NowPlayingReport | null {
+  return nowPlayingSnapshot().report
 }
 
 /** 注册全部路由并返回注销函数（供 ctx.effect 使用）。 */

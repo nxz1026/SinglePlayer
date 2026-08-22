@@ -69,3 +69,39 @@ export const api = {
 export function audioProxyUrl(url: string): string {
   return `${BASE}/audio?url=${encodeURIComponent(url)}`
 }
+
+// ---------------------------------------------------------------- 桥
+
+export interface NowPlayingReport {
+  trackId: string
+  name: string
+  artists: string[]
+  album: string
+  provider: string
+  positionSec: number
+  durationSec: number
+  playing: boolean
+}
+
+export interface BridgeCommand {
+  type: 'play' | 'pause' | 'resume' | 'next' | 'prev'
+  track?: Track
+}
+
+export async function bridgeReport(report: NowPlayingReport): Promise<void> {
+  await fetch(`${BASE}/bridge/report`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nowPlaying: report }),
+  }).catch(() => {})
+}
+
+export async function bridgePoll(): Promise<BridgeCommand[]> {
+  try {
+    const resp = await fetch(`${BASE}/bridge/poll`)
+    const payload = (await resp.json()) as { commands?: BridgeCommand[] }
+    return payload.commands ?? []
+  } catch {
+    return []
+  }
+}

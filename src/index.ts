@@ -8,12 +8,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { registerRoutes } from './routes.ts'
+import { registerTools } from './tools.ts'
 
 /** 稳定插件名（对应 cordis.patch.yml 的 insert id）。 */
 export const name = 'music'
 
 /** 宿主半依赖的服务。 */
-export const inject = ['webServer'] as const
+export const inject = ['webServer', 'tools'] as const
 
 /** 插件配置。 */
 export interface Config {
@@ -24,4 +25,5 @@ export interface Config {
 /** Cordis 插件体。 */
 export function apply(ctx: Context, _config: Config = {}): void {
   ctx.effect(() => registerRoutes(ctx), 'music: routes')
+  registerTools(ctx)
 }

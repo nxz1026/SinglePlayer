@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { Surface } from './PlayerPanel.tsx'
+import { startAiBridge } from './player.ts'
 
 /** 浏览器半依赖的服务。 */
 export const inject = [] as const
@@ -63,6 +64,7 @@ export function apply(ctx: ClientContext): void {
   const container = document.createElement('div')
   container.dataset.dshPlugin = 'dsh-music-huazai'
   document.body.appendChild(container)
+  startAiBridge()
   const root = createRoot(container)
   root.render(<App />)
   ctx.effect(() => () => {
