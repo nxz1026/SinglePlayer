@@ -255,3 +255,12 @@ export function cycleMode(): void {
 export function currentTrack(): Track | undefined {
   return state.queue[state.index]
 }
+
+/** 卡拉OK逐帧渲染用的精确时间源（绕过 React 状态的 ~4Hz 节流）。 */
+export function audioCurrentTime(): number {
+  return audio.currentTime
+}
+
+export function isPlaying(): boolean {
+  return !audio.paused && !audio.ended
+}

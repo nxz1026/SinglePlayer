@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api.ts'
+import { Karaoke } from './Karaoke.tsx'
 import {
   addToQueue,
   clearQueue,
@@ -301,6 +302,7 @@ function NowPlaying(): React.ReactElement | null {
         </div>
         {loadingUrl && <span className="dshm-spin">◌</span>}
       </div>
+      <Karaoke />
       <input
         className="dshm-range"
         type="range"
@@ -388,6 +390,7 @@ const CSS = `
 .dshm-now-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dshm-now-sub { font-size:11px; color:#9aa3c7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
 .dshm-spin { color:#7c5cff; animation:dshm-rotate 1.2s linear infinite; }
+.dshm-karaoke { width:100%; height:64px; display:block; margin-top:6px; }
 @keyframes dshm-rotate { to { transform:rotate(360deg); } }
 .dshm-range { width:100%; accent-color:#7c5cff; height:4px; cursor:pointer; }
 .dshm-times { display:flex; justify-content:space-between; font-size:10.5px; color:#9aa3c7; margin:-2px 0 2px; }
