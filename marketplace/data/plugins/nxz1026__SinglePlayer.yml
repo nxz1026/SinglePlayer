@@ -2,5 +2,5 @@ url: https://github.com/nxz1026/SinglePlayer
 name: nxz1026/SinglePlayer
 category: fun
 description:
-  en: 'Plugin-based music player inside DSH web UI: aggregated NetEase/QQ Music search and playback, word-level karaoke lyrics, multi-list library with favorite sync, one-tap random mix, AI tool playback control, and HALO PixelBar speaker lyric sync.'
-  zh: '运行在 DSH 内的插件化音乐播放器：聚合网易云/QQ 搜索播放、逐字卡拉OK歌词、多列表曲库与红心双向同步、随便听听一键随机开播，支持对话点歌与花再音箱歌词同步。'
+  en: 'AI-native music player as a standard dsh bundle (Cordis host half + React browser half): aggregated NetEase/QQ Music, word-level karaoke lyrics, HALO PixelBar USB-HID lyric sync, and 12 conversational AI tools — song requests, seek/volume/queue control, favorites, sleep timer, alarm clock, and speaker screen effects.'
+  zh: 'AI 原生的标准 dsh bundle（宿主半 Cordis + 浏览器半 React）：聚合网易云/QQ 搜索播放、逐字卡拉OK歌词、花再音箱 USB-HID 歌词同步；内置 12 个对话工具——点歌、进度音量队列收藏、睡眠定时、音乐闹钟与音箱屏幕效果，通知支持声音+音箱文字双通道。'
