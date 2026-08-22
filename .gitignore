@@ -16,6 +16,7 @@ obj/
 build/
 dist/
 out/
+/lib/
 
 # Node
 node_modules/
