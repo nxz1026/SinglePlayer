@@ -1,0 +1,25 @@
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Build
+bin/
+obj/
+build/
+dist/
+out/
+
+# Node
+node_modules/
+
+# Logs / temp
+*.log
+tmp/
