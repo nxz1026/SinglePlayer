@@ -8,6 +8,7 @@ import * as netease from './providers/netease.ts'
 import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
 import { drainCommands, nowPlayingSnapshot, pushCommand, reportNowPlaying } from './bridge.ts'
+import { getHaloSync } from './halo/sync.ts'
 import type { BridgeCommand, NowPlayingReport } from './bridge.ts'
 import type { ProviderId, Quality } from './providers/types.ts'
 import { loadAuth, saveAuth } from './store/auth.ts'
@@ -79,7 +80,7 @@ export function makeRoutes(ctx: Context): WebRoute[] {
   })
 
   return [
-    get(`${API_PREFIX}/health`, async () => ({ plugin: 'dsh-music-huazai', version: '0.1.0', milestone: 'M5' })),
+    get(`${API_PREFIX}/health`, async () => ({ plugin: 'dsh-music-huazai', version: '0.1.0', milestone: 'M6' })),
     get(`${API_PREFIX}/search`, async query => {
       const keyword = query.get('keyword') ?? ''
       const limit = Number(query.get('limit') ?? 12) || 12
@@ -191,6 +192,33 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       const command = normalizeCommand(body)
       if (!command) throw new Error('bad command')
       return { queued: pushCommand(command) }
+    }),
+
+    // ---- 花再（HALO PIXELBAR）同步 ----
+    get(`${API_PREFIX}/halo/status`, async () => ({ halo: getHaloSync().status() })),
+    post(`${API_PREFIX}/halo/config`, async body => {
+      const patch = (body.config ?? {}) as Record<string, unknown>
+      return { config: getHaloSync().setConfig(patch) }
+    }),
+    post(`${API_PREFIX}/halo/lyric`, async body => {
+      getHaloSync().onLyric(String(body.text ?? ''))
+      return {}
+    }),
+    post(`${API_PREFIX}/halo/song`, async body => {
+      getHaloSync().onSong(String(body.name ?? ''), String(body.artist ?? ''))
+      return {}
+    }),
+    post(`${API_PREFIX}/halo/state`, async body => {
+      getHaloSync().onPlayState(body.playing === true)
+      return {}
+    }),
+    post(`${API_PREFIX}/halo/command`, async body => {
+      const halo = getHaloSync()
+      const kind = String(body.kind ?? '')
+      if (kind === 'scene') return { ok: halo.sendScene(String(body.value ?? '')) }
+      if (kind === 'spectrum') return { ok: halo.sendSpectrum(Number(body.value) || 0) }
+      if (kind === 'clock') return { ok: halo.sendClock(Number(body.value) || 1) }
+      throw new Error(`bad kind: ${kind}`)
     }),
   ]
 }

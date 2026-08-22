@@ -11,6 +11,9 @@ importers:
       NeteaseCloudMusicApi:
         specifier: ^4.32.0
         version: 4.32.0
+      node-hid:
+        specifier: ^3.4.0
+        version: 3.4.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -1585,9 +1588,18 @@ packages:
     resolution: {integrity: sha512-eonl3sLUha+S1GzTPxychyhnUzKyeQkZ7jLjKrBagJgPla13F+uQ71HgpFefyHgqrjEbCPkDArxYsjY8/+gLKA==}
     engines: {node: '>= 0.4.0'}
 
+  node-addon-api@8.9.2:
+    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
+    engines: {node: ^18 || ^20 || >= 21}
+
   node-forge@1.4.0:
     resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
     engines: {node: '>= 6.13.0'}
+
+  node-hid@3.4.0:
+    resolution: {integrity: sha512-Br7EO3bJARAJBdtcsGzF/Vs5TjfbkaMdglqLQ+Rk9GOGgVqv5DxYUVH5znLerJU+OfBWw8sd552Ujcprz1bG9g==}
+    engines: {node: '>=10.16'}
+    hasBin: true
 
   object-inspect@1.13.4:
     resolution: {integrity: sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==}
@@ -1643,6 +1655,11 @@ packages:
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
+
+  pkg-prebuilds@1.1.0:
+    resolution: {integrity: sha512-jyai+KTQ2OwbN6iRYw88XbYOMgtpoSYJpjYebx7d9ihqz3txNi3ucsBt3va0iVWe6svSlaqpijMHFF/eJCMZzg==}
+    engines: {node: '>= 14.15.0'}
+    hasBin: true
 
   pngjs@5.0.0:
     resolution: {integrity: sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==}
@@ -3405,7 +3422,14 @@ snapshots:
 
   netmask@2.1.1: {}
 
+  node-addon-api@8.9.2: {}
+
   node-forge@1.4.0: {}
+
+  node-hid@3.4.0:
+    dependencies:
+      node-addon-api: 8.9.2
+      pkg-prebuilds: 1.1.0
 
   object-inspect@1.13.4: {}
 
@@ -3462,6 +3486,8 @@ snapshots:
   peek-readable@3.1.0: {}
 
   picomatch@4.0.5: {}
+
+  pkg-prebuilds@1.1.0: {}
 
   pngjs@5.0.0: {}
 

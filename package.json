@@ -35,7 +35,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "NeteaseCloudMusicApi": "^4.32.0"
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "node-hid": "^3.4.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0-rc.8"
