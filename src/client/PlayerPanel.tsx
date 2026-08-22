@@ -3,6 +3,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { FabPos } from './Fab.tsx'
+import { FAB_SIZE } from './Fab.tsx'
 import { api } from './api.ts'
 import { Karaoke } from './Karaoke.tsx'
 import { startQrLogin, useQrLogin } from './qrLogin.ts'
@@ -53,17 +55,37 @@ const QUALITY_LABEL: Record<string, string> = {
 
 const HISTORY_KEY = 'dshm-search-history'
 
+/** 面板跟随悬浮球展开的几何参数。 */
+const PANEL_W = 340
+const PANEL_GAP = 10
+const MIN_SPACE_ABOVE = 200
+
+/** 计算面板相对悬浮球的定位（上方空间不足时翻转到下方）。 */
+function panelStyleFor(anchor: FabPos): React.CSSProperties {
+  const maxLeft = Math.max(PANEL_GAP, window.innerWidth - PANEL_W - PANEL_GAP)
+  const left = Math.min(Math.max(PANEL_GAP, anchor.x + FAB_SIZE - PANEL_W), maxLeft)
+  if (anchor.y - PANEL_GAP >= MIN_SPACE_ABOVE) {
+    return { left, right: 'auto', top: 'auto', bottom: window.innerHeight - anchor.y + PANEL_GAP }
+  }
+  return { left, right: 'auto', top: anchor.y + FAB_SIZE + PANEL_GAP, bottom: 'auto' }
+}
+
 function fmt(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00'
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
-export function Surface({ open, onClose }: { open: boolean; onClose: () => void }): React.ReactElement | null {
+export function Surface({ open, onClose, anchor }: {
+  open: boolean
+  onClose: () => void
+  /** 悬浮球位置：面板跟随其展开。 */
+  anchor?: FabPos
+}): React.ReactElement | null {
   const [tab, setTab] = useState<'search' | 'library' | 'queue' | 'auth' | 'settings'>('search')
   if (!open) return null
   return (
-    <div className="dshm-panel">
+    <div className="dshm-panel" style={anchor ? panelStyleFor(anchor) : undefined}>
       <style>{CSS}</style>
       <div className="dshm-head">
         <span className="dshm-logo">♪</span>
@@ -109,18 +131,42 @@ export function Surface({ open, onClose }: { open: boolean; onClose: () => void 
 function SettingsView(): React.ReactElement {
   const [quality, setQuality] = useState(getQualityPref())
   const [halo, setHalo] = useState<import('./api.ts').HaloStatus | null>(null)
+  const [settings, setSettings] = useState<import('./api.ts').PluginSettings | null>(null)
+  const [schedule, setSchedule] = useState<import('./api.ts').ScheduleStatus | null>(null)
   const [savedNote, setSavedNote] = useState('')
 
   useEffect(() => {
     void api.haloStatus().then(({ halo }) => setHalo(halo)).catch(() => {})
+    void api.getPluginSettings().then(({ settings }) => setSettings(settings)).catch(() => {})
+    void api.scheduleStatus().then(setSchedule).catch(() => {})
   }, [])
 
   const patchHalo = useCallback((patch: Record<string, unknown>) => {
-    void api.haloSetConfig(patch).then(({ config }) => {
-      setHalo(previous => previous ? { ...previous, config: config as import('./api.ts').HaloStatus['config'] } : previous)
+    // 保存后重新拉取完整 status：顶层 enabled / connected 才会同步更新
+    // （此前只合并 config 子对象，导致「启用歌词同步」勾选框永远弹回）。
+    void api.haloSetConfig(patch)
+      .then(() => api.haloStatus())
+      .then(({ halo }) => {
+        setHalo(halo)
+        setSavedNote('已保存')
+        window.setTimeout(() => setSavedNote(''), 1500)
+      })
+      .catch(cause => setSavedNote(cause instanceof Error ? cause.message : String(cause)))
+  }, [])
+
+  const patchSwitches = useCallback((patch: Partial<import('./api.ts').PluginSettings>) => {
+    void api.savePluginSettings(patch).then(({ settings }) => {
+      setSettings(settings)
       setSavedNote('已保存')
       window.setTimeout(() => setSavedNote(''), 1500)
     }).catch(cause => setSavedNote(cause instanceof Error ? cause.message : String(cause)))
+  }, [])
+
+  const dropAlarm = useCallback((id: string) => {
+    void api.alarmRemove(id)
+      .then(() => api.scheduleStatus())
+      .then(setSchedule)
+      .catch(() => {})
   }, [])
 
   const config = halo?.config
@@ -142,6 +188,58 @@ function SettingsView(): React.ReactElement {
           <option key={value} value={value}>{label}</option>
         ))}
       </select>
+
+      <div className="dshm-set-title">通知与定时</div>
+      <label className="dshm-check-row">
+        <input
+          type="checkbox"
+          checked={settings?.notifySound ?? true}
+          onChange={event => patchSwitches({ notifySound: event.target.checked })}
+        />
+        声音提示音（浏览器）
+      </label>
+      <label className="dshm-check-row">
+        <input
+          type="checkbox"
+          checked={settings?.notifyHaloText ?? true}
+          disabled={settings ? !halo?.enabled : false}
+          title="依赖花再音箱连接"
+          onChange={event => patchSwitches({ notifyHaloText: event.target.checked })}
+        />
+        音箱文字提醒{halo?.connected ? '' : '（花再未连接）'}
+      </label>
+      <label className="dshm-check-row">
+        <input
+          type="checkbox"
+          checked={settings?.schedulerEnabled ?? true}
+          onChange={event => patchSwitches({ schedulerEnabled: event.target.checked })}
+        />
+        定时任务（闹钟 / 睡眠定时器）
+      </label>
+      <label className="dshm-check-row">
+        <input
+          type="checkbox"
+          checked={settings?.reversePushEnabled ?? false}
+          onChange={event => patchSwitches({ reversePushEnabled: event.target.checked })}
+        />
+        反向推送（切歌写入会话动态）
+      </label>
+      {schedule && schedule.sleepRemainingSec > 0 && (
+        <div className="dshm-note">
+          睡眠定时：还剩 {Math.ceil(schedule.sleepRemainingSec / 60)} 分钟自动暂停
+        </div>
+      )}
+      {schedule && schedule.alarms.length > 0 && (
+        <div className="dshm-alarm-list">
+          {schedule.alarms.map(alarm => (
+            <div key={alarm.id} className="dshm-alarm-row">
+              <span className="dshm-alarm-time">{alarm.time}</span>
+              <span className="dshm-alarm-kw">{alarm.label || alarm.keyword}</span>
+              <button type="button" className="dshm-icon" title="删除闹钟" onClick={() => dropAlarm(alarm.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="dshm-set-title">
         花再音箱（HALO PixelBar）
@@ -206,6 +304,7 @@ function SettingsView(): React.ReactElement {
 
 // ---------------------------------------------------------------- 搜索
 
+/** 关键词历史（localStorage 跨会话）。 */
 function readHistory(): string[] {
   try {
     const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown
@@ -221,9 +320,40 @@ function saveHistory(keyword: string): string[] {
   return history
 }
 
+/** 最近一次搜索（模块级缓存：切 Tab、关开面板不丢；跨会话靠上面的关键词历史）。 */
+let recentSearch: { keyword: string; tracks: Track[] } | null = null
+
+function readRecentSearch(): { keyword: string; tracks: Track[] } {
+  if (recentSearch) return recentSearch
+  try {
+    const raw = JSON.parse(localStorage.getItem('dshm-last-search') ?? '') as
+      | { keyword?: unknown; tracks?: unknown }
+      | null
+    if (
+      raw && typeof raw.keyword === 'string'
+      && Array.isArray(raw.tracks) && raw.tracks.length > 0
+    ) {
+      recentSearch = { keyword: raw.keyword, tracks: raw.tracks as Track[] }
+      return recentSearch
+    }
+  } catch {
+    // 无存档。
+  }
+  return { keyword: '', tracks: [] }
+}
+
+function saveRecentSearch(keyword: string, tracks: Track[]): void {
+  recentSearch = { keyword, tracks }
+  try {
+    localStorage.setItem('dshm-last-search', JSON.stringify({ keyword, tracks }))
+  } catch {
+    // 存不下就算了（结果太大等）。
+  }
+}
+
 function SearchTab(): React.ReactElement {
-  const [keyword, setKeyword] = useState('')
-  const [results, setResults] = useState<Track[]>([])
+  const [keyword, setKeyword] = useState(() => readRecentSearch().keyword)
+  const [results, setResults] = useState<Track[]>(() => readRecentSearch().tracks)
   const [busy, setBusy] = useState(false)
   const [mixing, setMixing] = useState(false)
   const [error, setError] = useState('')
@@ -237,6 +367,7 @@ function SearchTab(): React.ReactElement {
     try {
       const { tracks } = await api.search(text, 20)
       setResults(tracks)
+      saveRecentSearch(text, tracks)
       setHistory(saveHistory(text))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

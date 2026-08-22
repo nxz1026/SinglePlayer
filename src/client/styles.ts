@@ -56,7 +56,7 @@ export const CSS = `
 .dshm-now-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dshm-now-sub { font-size:11px; color:#9aa3c7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
 .dshm-spin { color:#7c5cff; animation:dshm-rotate 1.2s linear infinite; }
-.dshm-karaoke { width:100%; height:52px; display:block; margin-top:4px; }
+.dshm-karaoke { width:100%; height:34px; display:block; margin-top:4px; }
 @keyframes dshm-rotate { to { transform:rotate(360deg); } }
 .dshm-range { width:100%; accent-color:#7c5cff; height:4px; cursor:pointer; }
 .dshm-times { display:flex; justify-content:space-between; font-size:10.5px; color:#9aa3c7; margin:-2px 0 2px; }
@@ -105,4 +105,8 @@ export const CSS = `
 .dshm-lucky:disabled { opacity:.55; cursor:default; }
 .dshm-file-hidden { display:none; }
 .dshm-sec-head { display:flex; align-items:center; gap:6px; }
+.dshm-alarm-list { display:flex; flex-direction:column; gap:2px; }
+.dshm-alarm-row { display:flex; align-items:center; gap:8px; font-size:12px; padding:2px 0; }
+.dshm-alarm-time { color:#8be9fd; font-weight:600; min-width:38px; }
+.dshm-alarm-kw { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#cdd4f5; }
 `

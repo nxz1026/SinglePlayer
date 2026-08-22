@@ -16,6 +16,11 @@ import type { ProviderId, Quality } from './providers/types.ts'
 import { loadAuth, saveAuth } from './store/auth.ts'
 import { buildRecommendSections, buildShuffleMix } from './recommend.ts'
 import { makeHaloRoutes } from './halo/routes.ts'
+import { getSettings, patchSettings } from './store/settings.ts'
+import type { PluginSettings } from './store/settings.ts'
+import { addAlarm, cancelSleepTimer, removeAlarm, scheduleSnapshot, startSleepTimer } from './scheduler.ts'
+import { dispatchNotify } from './notify.ts'
+import { maybeReversePush } from './reverse.ts'
 
 export const API_PREFIX = '/api/dsh-music'
 
@@ -62,7 +67,7 @@ export function parseTrackId(id: string): { provider: ProviderId; songId: string
   return { provider: provider as ProviderId, songId }
 }
 
-export function makeRoutes(_ctx: Context): WebRoute[] {
+export function makeRoutes(ctx: Context): WebRoute[] {
   const get = (path: string, run: (query: URLSearchParams) => Promise<unknown>): WebRoute => ({
     kind: 'exact',
     path,
@@ -197,7 +202,7 @@ export function makeRoutes(_ctx: Context): WebRoute[] {
     post(`${API_PREFIX}/bridge/report`, async body => {
       const raw = body.nowPlaying as Partial<NowPlayingReport> | undefined
       if (raw && typeof raw.trackId === 'string') {
-        reportNowPlaying({
+        const report: NowPlayingReport = {
           trackId: raw.trackId,
           name: String(raw.name ?? ''),
           artists: Array.isArray(raw.artists) ? raw.artists.map(String) : [],
@@ -206,7 +211,11 @@ export function makeRoutes(_ctx: Context): WebRoute[] {
           positionSec: Number(raw.positionSec) || 0,
           durationSec: Number(raw.durationSec) || 0,
           playing: raw.playing === true,
-        })
+        }
+        const isNewTrack = report.trackId !== getNowPlaying()?.trackId
+        reportNowPlaying(report)
+        // 反向推送：切歌事件写入会话（受设置开关控制）。
+        maybeReversePush(ctx, report, isNewTrack)
       }
       return {}
     }),
@@ -264,6 +273,36 @@ export function makeRoutes(_ctx: Context): WebRoute[] {
       if (!track?.provider || !track.songId) throw new Error('bad track')
       recordPlay(track)
       return {}
+    }),
+
+    // ---- 插件设置（通知 / 定时 / 反向推送开关） ----
+    get(`${API_PREFIX}/settings`, async () => ({ settings: getSettings() })),
+    post(`${API_PREFIX}/settings/save`, async body => {
+      const patch = (body.settings ?? body) as Partial<PluginSettings>
+      return { settings: patchSettings(patch) }
+    }),
+
+    // ---- 定时任务（闹钟 + 睡眠定时器） ----
+    get(`${API_PREFIX}/schedule`, async () => scheduleSnapshot()),
+    post(`${API_PREFIX}/alarm/add`, async body => ({
+      alarm: addAlarm(String(body.time ?? ''), String(body.keyword ?? ''), body.label == null ? undefined : String(body.label)),
+    })),
+    post(`${API_PREFIX}/alarm/remove`, async body => ({ removed: removeAlarm(String(body.id ?? '')) })),
+    post(`${API_PREFIX}/sleep/set`, async body => {
+      const minutes = Number(body.minutes) || 0
+      if (!(minutes > 0)) {
+        cancelSleepTimer()
+        return { remainingSec: 0 }
+      }
+      return { endsAt: startSleepTimer(Math.min(minutes, 720)) }
+    }),
+    post(`${API_PREFIX}/sleep/clear`, async () => ({ cleared: cancelSleepTimer() })),
+
+    // ---- 通知触发入口（外部/调试用）：按开关分发声音与音箱文字 ----
+    post(`${API_PREFIX}/notify`, async body => {
+      const title = String(body.title ?? '提醒').slice(0, 40)
+      const text = String(body.text ?? '').slice(0, 120)
+      return dispatchNotify(title, text)
     }),
 
     ...makeHaloRoutes(),

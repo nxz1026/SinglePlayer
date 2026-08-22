@@ -71,6 +71,27 @@ export const api = {
   haloSetConfig(config: Record<string, unknown>): Promise<{ config: Record<string, unknown> }> {
     return post('/halo/config', { config })
   },
+  getPluginSettings(): Promise<{ settings: PluginSettings }> {
+    return get('/settings')
+  },
+  savePluginSettings(patch: Partial<PluginSettings>): Promise<{ settings: PluginSettings }> {
+    return post('/settings/save', { settings: patch })
+  },
+  scheduleStatus(): Promise<ScheduleStatus> {
+    return get('/schedule')
+  },
+  alarmAdd(time: string, keyword: string, label?: string): Promise<{ alarm: AlarmItem }> {
+    return post('/alarm/add', { time, keyword, label })
+  },
+  alarmRemove(id: string): Promise<{ removed: boolean }> {
+    return post('/alarm/remove', { id })
+  },
+  sleepSet(minutes: number): Promise<{ remainingSec?: number; endsAt?: number }> {
+    return post('/sleep/set', { minutes })
+  },
+  sleepClear(): Promise<{ cleared: boolean }> {
+    return post('/sleep/clear', {})
+  },
   shuffleMix(): Promise<{ tracks: Track[] }> {
     return get('/shuffle-mix')
   },
@@ -114,6 +135,28 @@ export interface HaloStatus {
     maxCharsPerLine?: number
     screenColor?: { r: number; g: number; b: number }
   }
+}
+
+/** 插件设置（通知 / 定时 / 反向推送开关）。 */
+export interface PluginSettings {
+  notifySound: boolean
+  notifyHaloText: boolean
+  schedulerEnabled: boolean
+  reversePushEnabled: boolean
+}
+
+/** 音乐闹钟。 */
+export interface AlarmItem {
+  id: string
+  time: string
+  keyword: string
+  label?: string
+}
+
+export interface ScheduleStatus {
+  alarms: AlarmItem[]
+  sleepRemainingSec: number
+  schedulerEnabled: boolean
 }
 
 export interface LibraryList {

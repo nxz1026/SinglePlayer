@@ -48,7 +48,6 @@ function findLineIndex(lines: LyricLine[], now: number): number {
 const FONT = '700 20px "Segoe UI", system-ui, -apple-system, sans-serif'
 const BASE_COLOR = 'rgba(154,163,199,0.75)'
 const HI_COLOR = '#ffffff'
-const TRANS_COLOR = 'rgba(139,233,253,0.6)'
 
 export function Karaoke(): React.ReactElement | null {
   const lyric = usePlayer(s => s.lyric)
@@ -128,14 +127,6 @@ export function Karaoke(): React.ReactElement | null {
         ctx!.fillText(line.text, x, y)
         ctx!.restore()
       }
-
-      // 翻译行（小字）
-      if (line.translation) {
-        ctx!.font = '500 11px "Segoe UI", system-ui, sans-serif'
-        ctx!.fillStyle = TRANS_COLOR
-        ctx!.textBaseline = 'top'
-        ctx!.fillText(line.translation, Math.max(8, (cssW - ctx!.measureText(line.translation).width) / 2), y + 13)
-      }
       ctx!.restore()
     }
 
@@ -152,12 +143,9 @@ export function Karaoke(): React.ReactElement | null {
         return
       }
       const index = findLineIndex(lines, now)
-      const centerY = cssH / 2 - 6
+      // 单行模式：只画当前行，垂直居中（界面窄，一行更清爽）。
       const current = index >= 0 ? lines[index] : undefined
-      if (current) drawLine(current, index, now, centerY, 1, payload.source === 'yrc-word')
-      // 只保留当前行+下一行，界面更清爽
-      const nextLine = lines[index + 1]
-      if (nextLine && nextLine.text) drawLine(nextLine, index + 1, now, cssH - 12, 0.4, false)
+      if (current && current.text) drawLine(current, index, now, cssH / 2, 1, payload.source === 'yrc-word')
     }
 
     const tick = (): void => { render(); raf = requestAnimationFrame(tick) }

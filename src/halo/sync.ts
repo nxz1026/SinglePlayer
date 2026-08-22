@@ -67,6 +67,8 @@ export class HaloSync {
   private featureFails: Record<string, number> = {}
   private featureDisabled: Record<string, boolean> = {}
   private featureDisabledAt: Record<string, number> = {}
+  private devicesCacheAt = 0
+  private devicesCacheCount = 0
 
   constructor() {
     this.config = this.loadConfig()
@@ -88,9 +90,29 @@ export class HaloSync {
   }
 
   setConfig(patch: Partial<HaloConfig>): HaloConfig {
+    const prev = this.config
     this.config = { ...this.config, ...patch }
     if (patch.enabled === true) void this.connect()
     if (patch.enabled === false) this.disconnect()
+
+    // 已连接时让配置改动即时生效（此前只在 connect 时下发，改了没反应）。
+    const screenModeChanged =
+      (patch.dynamicScroll !== undefined && patch.dynamicScroll !== prev.dynamicScroll)
+      || (patch.align !== undefined && patch.align !== prev.align)
+      || (!!patch.screenColor
+        && (patch.screenColor.r !== prev.screenColor.r
+          || patch.screenColor.g !== prev.screenColor.g
+          || patch.screenColor.b !== prev.screenColor.b))
+    if (screenModeChanged && this.connected) this.applyScreenMode()
+    // 每行字数变化：清掉去重哨兵，当前行会按新宽度重发。
+    if (patch.maxCharsPerLine !== undefined && patch.maxCharsPerLine !== prev.maxCharsPerLine) {
+      this.lastLine = null
+    }
+    // 暂停状态下开启「暂停时显示时钟」：立即下发时钟，不用等下一次暂停事件。
+    if (patch.idleClockWhenPaused === true && !prev.idleClockWhenPaused && !this.playing && this.connected) {
+      this.sendFeature('clock', buildClockPacket(1))
+    }
+
     try {
       writeFileSync(configPath(), JSON.stringify(this.config, null, 2), 'utf8')
     } catch { /* 尽力而为 */ }
@@ -103,19 +125,24 @@ export class HaloSync {
     try {
       const fn = hid.enumerate ?? hid.devices
       const list = typeof fn === 'function' ? fn.call(hid) : []
-      return Array.isArray(list) ? list : []
+      const arr = Array.isArray(list) ? list : []
+      this.devicesCacheAt = Date.now()
+      this.devicesCacheCount = arr.length
+      return arr
     } catch {
       return []
     }
   }
 
   status(): Record<string, unknown> {
+    // 浏览器端会低频轮询 status：设备数走 15s 缓存，避免高频枚举 HID。
+    if (Date.now() - this.devicesCacheAt > 15_000) this.listDevices()
     return {
       enabled: this.config.enabled,
       connected: this.connected,
       simulated: this.simulated,
       playing: this.playing,
-      devices: this.listDevices().length,
+      devices: this.devicesCacheCount,
       config: this.getConfig(),
     }
   }
@@ -172,6 +199,21 @@ export class HaloSync {
     }
     this.device = null
     this.connected = false
+  }
+
+  /** 退出时把音响恢复到时钟界面（移植 Mineradio restoreInitialState：时钟包 + 时钟场景包双保险）。 */
+  restoreClock(): void {
+    if (!this.connected) return
+    try {
+      this.sendRaw(buildClockPacket(1))
+      this.sendRaw(buildScenePacket(SCENE_CATEGORY.clock))
+    } catch { /* 尽力而为 */ }
+  }
+
+  /** 卸载/退出清理：先恢复时钟再断开设备。 */
+  dispose(): void {
+    try { this.restoreClock() } catch { /* ignore */ }
+    try { this.disconnect() } catch { /* ignore */ }
   }
 
   /** 屏色 + 对齐/滚动模式（连接后初始化用）。 */
@@ -277,6 +319,27 @@ export class HaloSync {
       this.lastLine = null
       if (this.config.idleClockWhenPaused) this.sendFeature('clock', buildClockPacket(1))
     }
+  }
+
+  /**
+   * 文字提醒（通知通道）：不要求正在播放，直接上屏并短暂压制歌词，
+   * 随后由歌词自然接管。仅要求已启用同步且设备在线。
+   */
+  onNotify(text: string): void {
+    if (!this.config.enabled || !this.connected) return
+    const line = String(text ?? '').trim()
+    if (!line) return
+    this.songTextUntil = Date.now() + 4000
+    this.lastLine = null
+    this.sendFeature('text', buildTextPacket(line, 0, this.config.maxCharsPerLine))
+  }
+
+  /** 屏色设置：走 setConfig 以持久化并即时重发屏幕模式。 */
+  sendScreenColor(r: number, g: number, b: number): boolean {
+    if (!this.connected) return false
+    const clamp = (v: number): number => Math.min(255, Math.max(0, Math.round(v)))
+    this.setConfig({ screenColor: { r: clamp(r), g: clamp(g), b: clamp(b) } })
+    return true
   }
 
   sendScene(name: string): boolean {

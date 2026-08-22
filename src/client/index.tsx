@@ -7,6 +7,8 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { Fab, readFabPos } from './Fab.tsx'
+import type { FabPos } from './Fab.tsx'
 import { Surface } from './PlayerPanel.tsx'
 import { startAiBridge } from './player.ts'
 import { startHaloBridge } from './haloBridge.ts'
@@ -14,42 +16,13 @@ import { startHaloBridge } from './haloBridge.ts'
 /** 浏览器半依赖的服务。 */
 export const inject = [] as const
 
-function Fab({ open, onClick }: { open: boolean; onClick: () => void }): React.ReactElement {
-  return (
-    <>
-      <style>{FAB_CSS}</style>
-      <button
-        type="button"
-        className={open ? 'dshm-fab dshm-fab-open' : 'dshm-fab'}
-        title="单身汉播放器"
-        aria-label="单身汉播放器"
-        onClick={onClick}
-      >
-        {open ? '×' : '♪'}
-      </button>
-    </>
-  )
-}
-
-const FAB_CSS = `
-.dshm-fab {
-  position: fixed; right: 18px; bottom: 18px; z-index: 2147483000;
-  width: 44px; height: 44px; border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.16);
-  background: linear-gradient(135deg, rgba(124,92,255,.85), rgba(56,189,248,.75));
-  color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
-  box-shadow: 0 6px 24px rgba(0,0,0,.35);
-}
-.dshm-fab:hover { filter: brightness(1.12); }
-.dshm-fab-open { background: linear-gradient(135deg, rgba(56,189,248,.8), rgba(124,92,255,.7)); }
-`
-
 function App(): React.ReactElement {
   const [open, setOpen] = useState(false)
+  const [fabPos, setFabPos] = useState<FabPos>(readFabPos)
   return (
     <>
-      <Fab open={open} onClick={() => setOpen(value => !value)} />
-      <Surface open={open} onClose={() => setOpen(false)} />
+      <Fab open={open} onClick={() => setOpen(value => !value)} onMove={setFabPos} />
+      <Surface open={open} onClose={() => setOpen(false)} anchor={fabPos} />
     </>
   )
 }

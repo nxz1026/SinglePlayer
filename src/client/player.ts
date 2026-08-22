@@ -6,10 +6,10 @@
 import { useSyncExternalStore } from 'react'
 import { api, audioProxyUrl, bridgePoll, bridgeReport } from './api.ts'
 import type { NowPlayingReport } from '../providers/types.ts'
-import type { LyricPayload, Track } from '../providers/types.ts'
+import type { BridgeCommand, LyricPayload, PlayModeId, Track } from '../providers/types.ts'
 import { parseLyricText } from '../lyric/parse.ts'
 
-export type PlayMode = 'order' | 'repeat' | 'one' | 'random'
+export type PlayMode = PlayModeId
 
 export interface PlayerState {
   queue: Track[]
@@ -448,8 +448,41 @@ export function setVolume(volume: number): void {
 export function cycleMode(): void {
   const order: PlayMode[] = ['order', 'repeat', 'one', 'random']
   const mode = order[(order.indexOf(state.mode) + 1) % order.length] ?? 'order'
+  setMode(mode)
+}
+
+/** 直接设置播放模式（AI 命令通道用）。 */
+export function setMode(mode: PlayMode): void {
   localStorage.setItem('dshm-mode', mode)
   set({ mode })
+}
+
+/** 提示音：Web Audio 双音（通知通道，独立于花再音箱）。 */
+let chimeCtx: AudioContext | null = null
+
+function playChime(): void {
+  try {
+    const Ctor = window.AudioContext
+      ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctor) return
+    chimeCtx = chimeCtx ?? new Ctor()
+    const ctx = chimeCtx
+    if (ctx.state === 'suspended') void ctx.resume()
+    const t0 = ctx.currentTime + 0.02
+    for (const [index, freq] of [880, 1174.66].entries()) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      const start = t0 + index * 0.16
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.0001, start)
+      gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.34)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(start)
+      osc.stop(start + 0.38)
+    }
+  } catch { /* 尽力而为 */ }
 }
 
 /** 音质偏好（设置面板可调，默认 exhigh）。 */
@@ -521,7 +554,7 @@ export function startAiBridge(): void {
   }, POLL_MS)
 }
 
-function executeCommand(command: { type: 'play' | 'pause' | 'resume' | 'next' | 'prev'; track?: Track }): void {
+function executeCommand(command: BridgeCommand): void {
   switch (command.type) {
     case 'play':
       if (command.track) playTrack(command.track)
@@ -539,5 +572,40 @@ function executeCommand(command: { type: 'play' | 'pause' | 'resume' | 'next' | 
     case 'prev':
       prev()
       break
+    case 'queue_add': {
+      let added = 0
+      for (const track of command.tracks) {
+        if (!state.queue.some(item => item.id === track.id)) added += 1
+        addToQueue(track)
+      }
+      set({ note: `已加入队列 ${added} 首` })
+      window.setTimeout(() => { if (state.note.startsWith('已加入队列')) set({ note: '' }) }, 3000)
+      break
+    }
+    case 'queue_clear':
+      clearQueue()
+      break
+    case 'volume': {
+      const value = Math.min(1, Math.max(0, command.value))
+      setVolume(value)
+      set({ note: `音量 ${Math.round(value * 100)}%` })
+      window.setTimeout(() => { if (state.note.startsWith('音量')) set({ note: '' }) }, 2500)
+      break
+    }
+    case 'seek':
+      if (Number.isFinite(command.position)) seek(Math.max(0, command.position))
+      break
+    case 'mode':
+      setMode(command.mode)
+      set({ note: `播放模式：${command.mode}` })
+      window.setTimeout(() => { if (state.note.startsWith('播放模式')) set({ note: '' }) }, 2500)
+      break
+    case 'notify': {
+      playChime()
+      const text = `🔔 ${command.title}${command.text ? `：${command.text}` : ''}`
+      set({ note: text })
+      window.setTimeout(() => { if (state.note === text) set({ note: '' }) }, 6000)
+      break
+    }
   }
 }

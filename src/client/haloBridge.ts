@@ -9,9 +9,15 @@ import { buildKaraokePayload, type KaraokePayload } from '../lyric/parse.ts'
 
 const FLAG = '__dshMusicHaloBridge'
 const TICK_MS = 200
-const CONFIG_POLL_MS = 5000
+const CONFIG_POLL_MS = 1200
+
+interface HaloStatusLite {
+  enabled?: boolean
+  config?: Record<string, unknown> | null
+}
 
 let enabled = false
+let statusSig = ''
 let lastLine = '__init__'
 let lastPlaying = false
 let lastSongSig = ''
@@ -70,13 +76,29 @@ function tick(): void {
 }
 
 async function refreshConfig(): Promise<void> {
+  let nextEnabled = enabled
+  let sig = statusSig
   try {
     const resp = await fetch('/api/dsh-music/halo/status')
-    const data = (await resp.json()) as { halo?: { enabled?: boolean } }
-    enabled = data.halo?.enabled === true
+    const data = (await resp.json()) as { halo?: HaloStatusLite }
+    const halo = data.halo
+    nextEnabled = halo?.enabled === true
+    sig = `${nextEnabled ? 1 : 0}|${JSON.stringify(halo?.config ?? null)}`
   } catch {
-    enabled = false
+    // 网络抖动时保持现状，避免误停。
   }
+  if (nextEnabled && !enabled) {
+    // 重新启用：清空去重哨兵，强制重发播放状态/切歌信息/当前行，
+    // 否则宿主侧 playing 停留在旧值，歌词会被 onLyric 拦住不显示。
+    lastLine = '__init__'
+    lastPlaying = !isPlaying()
+    lastSongSig = ''
+  } else if (nextEnabled && sig !== statusSig) {
+    // 配置变化（如每行字数）：重发当前行。
+    lastLine = '__init__'
+  }
+  statusSig = sig
+  enabled = nextEnabled
 }
 
 /** 启动桥循环。幂等。 */
