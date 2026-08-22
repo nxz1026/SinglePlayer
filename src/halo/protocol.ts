@@ -58,11 +58,27 @@ export function displayWidth(text: string): number {
 }
 
 /**
+ * 清洗设备文本：剔除非 BMP 字符（emoji 等 4 字节 UTF-8 序列）。
+ * 固件解码器不支持 4 字节序列，一个 emoji 会打乱后续全部多字节解析，
+ * 使中文显示为「？」；控制字符一并剔除。
+ */
+export function sanitizeDeviceText(text: string): string {
+  return Array.from(String(text ?? ''))
+    .filter(ch => {
+      const code = ch.codePointAt(0) ?? 0
+      return code >= 0x20 && code <= 0xffff
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
  * 文字包 v1：`2E AA EC E8 + 颜色(1) + 总长(2 LE) + 文本长(1) + UTF-8 + 校验和(1)`。
  * 颜色必须为 0（白）：非零颜色字节会触发固件复位并掉线。
  */
 export function buildTextPacket(text: string, colorByte = 0, maxChars = 32): Buffer {
-  let s = String(text ?? '')
+  let s = sanitizeDeviceText(text)
   while ((displayWidth(s) > maxChars || Buffer.byteLength(s, 'utf-8') > 54) && s.length > 0) {
     s = s.slice(0, -1)
   }

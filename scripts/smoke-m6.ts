@@ -38,7 +38,13 @@ assert(clock[15] === (expectCs & 0xff) && clock[16] === (expectCs >> 8), '时钟
 const spec = buildSpectrumPacket(1)
 assert(spec[13] === 0 && spec[14] === 0xff, '频谱 styleIndex 0')
 
-// 5. 同步服务（无设备 → 模拟空转，不抛错）
+// 5. emoji/非BMP 字符清洗（固件不支持 4 字节 UTF-8）
+const emojiPkt = buildTextPacket('🎵 晴天 - 周杰伦', 0, 32)
+const textLen = emojiPkt[7]
+const textOut = emojiPkt.subarray(8, 8 + textLen).toString('utf-8')
+assert(!textOut.includes('🎵') && textOut === '晴天 - 周杰伦', `emoji 清洗后文本正确（"${textOut}"）`)
+
+// 6. 同步服务（无设备 → 模拟空转，不抛错）
 const halo = new HaloSync()
 assert(typeof halo.status() === 'object', 'status 可查询')
 halo.onLyric('不应抛错')

@@ -246,7 +246,8 @@ export class HaloSync {
   onSong(name: string, artist: string): void {
     if (!this.config.enabled) return
     this.ensureConnected()
-    const info = `🎵 ${name || '未知'} - ${artist}`.trimEnd()
+    // 注意：不要用 emoji 前缀（固件不支持 4 字节 UTF-8，会打乱整行解码）。
+    const info = `${name || '未知'} - ${artist}`.trimEnd()
     this.songTextUntil = Date.now() + 3000
     this.lastLine = null
     this.sendFeature('text', buildTextPacket(info, 0, this.config.maxCharsPerLine))
