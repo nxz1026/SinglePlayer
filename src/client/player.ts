@@ -145,74 +145,192 @@ export function currentLyricLines(): LyricLine[] {
   return parseLrcLines(source)
 }
 
+// ---------------------- 播放解析（音源回退，骨架移植自 Mineradio provider-fallback）----------------------
+
+/** 归一化匹配文本：去括号内容与全部标点空白（Mineradio normalizeMatchText）。 */
+function normalizeMatchText(text: string): string {
+  return String(text ?? '').toLowerCase()
+    .replace(/[（(【[].*?[）)】\]]/g, '')
+    .replace(/[\s·・\-—_.,，。:：'"“”‘’/\\|]+/g, '')
+}
+
+function artistNamePartsOf(artists: string[]): string[] {
+  return artists.map(name => normalizeMatchText(name)).filter(Boolean)
+}
+
+/** 同名同歌手判定（Mineradio isSameTitleArtist 移植）：标题归一化相等 + 歌手交集。 */
+function isSameTitleArtist(source: Track, candidate: Track): boolean {
+  const titleA = normalizeMatchText(source.name)
+  const titleB = normalizeMatchText(candidate.name)
+  if (!titleA || !titleB || titleA !== titleB) return false
+  const a = artistNamePartsOf(source.artists)
+  const b = artistNamePartsOf(candidate.artists)
+  if (!a.length || !b.length) return false
+  return a.some(name => b.includes(name))
+}
+
+const PROVIDER_LABEL: Record<string, string> = { qq: 'QQ 音乐', netease: '网易云' }
+
+const FALLBACK_BUDGET_MS = 20_000
+const MAX_QUEUE_ADVANCES = 2
+const MAX_PROVIDER_ATTEMPTS = 4
+
+interface FallbackRecovery {
+  deadlineAt: number
+  visited: Set<string>
+  advances: number
+  attempts: number
+}
+
+let activeRecovery: FallbackRecovery | undefined
+let playSerial = 0
+
+function keyOf(track: Track): string {
+  return `${track.provider}:${normalizeMatchText(track.name)}|${artistNamePartsOf(track.artists).sort().join(',')}`
+}
+
+function ensureRecovery(seedTrack: Track): FallbackRecovery {
+  if (!activeRecovery || Date.now() > activeRecovery.deadlineAt) {
+    activeRecovery = {
+      deadlineAt: Date.now() + FALLBACK_BUDGET_MS,
+      visited: new Set([keyOf(seedTrack)]),
+      advances: 0,
+      attempts: 0,
+    }
+  }
+  return activeRecovery
+}
+
+function completeRecovery(): void {
+  activeRecovery = undefined
+}
+
+// 平台登录态缓存（决定换源优先顺序：已登录平台优先）。
+let platformsAt = 0
+const platformLoggedInMap: Record<string, boolean> = {}
+
+async function refreshPlatforms(): Promise<void> {
+  try {
+    const { providers } = await api.authStatus()
+    for (const item of providers) platformLoggedInMap[item.provider] = item.loggedIn
+    platformsAt = Date.now()
+  } catch { /* 尽力而为 */ }
+}
+
+async function orderedAlternates(currentProvider: string): Promise<string[]> {
+  if (Date.now() - platformsAt > 60_000) await refreshPlatforms()
+  const others = currentProvider === 'qq' ? ['netease'] : ['qq']
+  // 已登录平台排前面（取流成功率更高）；匿名平台仍可作为兜底。
+  return others.sort((a, b) => Number(platformLoggedInMap[b] ?? false) - Number(platformLoggedInMap[a] ?? false))
+}
+
+interface PlayOpts {
+  /** 回退链深度：>0 表示当前曲目已是换源结果，不再二次回退。 */
+  depth?: number
+  /** 队列跳歌推进次数（跨整条回退链共享）。 */
+  advances?: number
+}
+
 async function resolveAndPlay(track: Track): Promise<void> {
-  set({ loadingUrl: true, error: '', note: '', currentTime: 0, duration: track.durationMs / 1000 })
+  playSerial += 1
+  activeRecovery = undefined // 用户主动点播：全新预算
+  await fetchAndCommit(track, { depth: 0 }, playSerial)
+}
+
+async function fetchAndCommit(track: Track, opts: PlayOpts, myToken: number): Promise<boolean> {
+  const depth = opts.depth ?? 0
+  set({ loadingUrl: true, error: '', currentTime: 0, duration: track.durationMs / 1000 })
   try {
     const quality = getQualityPref()
     let result = await api.songUrl(track.id, quality, track.mediaMid)
     // 同平台音质自动降级：偏好档拿不到就降到标准档再试。
     if (!result.url && quality !== 'standard') {
       result = await api.songUrl(track.id, 'standard', track.mediaMid)
-      if (result.url) set({ note: '已降级为标准音质' })
     }
-    if (!result.url) {
-      // 跨平台音源回退：当前平台取流失败时，尝试另一平台的同名曲目。
-      const fallback = await findFallback(track, quality)
-      if (fallback) {
-        replaceCurrent(fallback)
-        return
-      }
-      const friendly = /VIP|未登录/.test(result.reason ?? '')
-        ? `VIP 曲目：请在「账号」页登录${track.provider === 'qq' ? ' QQ' : ''}后播放`
-        : result.reason ?? '无法获取播放地址'
-      set({ loadingUrl: false, error: friendly })
-      return
+    if (myToken !== playSerial) return false // 用户点了别的歌，本次作废
+    if (result.url) {
+      commitPlay(track, result.url)
+      completeRecovery()
+      return true
     }
-    currentTrackId = track.id
-    audio.src = audioProxyUrl(result.url)
-    audio.play().catch(() => set({ error: '浏览器阻止了自动播放，请再点一次' }))
-    set({ loadingUrl: false })
-    void loadLyric(track.id)
+    if (depth > 0) return false // 换源曲目再失败：不递归，交由上层终局
+    return await handleUnplayable(track, myToken, result.reason ?? '', opts)
   } catch (error) {
+    if (myToken !== playSerial) return false
     set({ loadingUrl: false, error: error instanceof Error ? error.message : String(error) })
+    return false
   }
 }
 
-/** 在另一平台搜索同名歌曲并验证可播，返回第一个可用的候选。 */
-async function findFallback(track: Track, quality: string): Promise<Track | undefined> {
-  const other = track.provider === 'qq' ? 'netease' : 'qq'
-  try {
-    const { tracks } = await api.search(`${track.name} ${track.artists[0] ?? ''}`.trim(), 8)
-    const wanted = normalizeName(track.name)
-    const candidates = tracks.filter(item => {
-      if (item.provider !== other) return false
-      const name = normalizeName(item.name)
-      return name.includes(wanted) || wanted.includes(name)
-    })
-    for (const candidate of candidates.slice(0, 3)) {
-      let probe = await api.songUrl(candidate.id, quality, candidate.mediaMid)
-      if (!probe.url && quality !== 'standard') {
-        probe = await api.songUrl(candidate.id, 'standard', candidate.mediaMid)
-      }
-      if (probe.url) {
-        set({ note: `已切换音源（${candidate.provider}）` })
-        return candidate
-      }
+function commitPlay(track: Track, url: string): void {
+  currentTrackId = track.id
+  audio.src = audioProxyUrl(url)
+  audio.play().catch(() => set({ error: '浏览器阻止了自动播放，请再点一次' }))
+  set({ loadingUrl: false })
+  void loadLyric(track.id)
+}
+
+function friendlyReason(reason: string, track: Track): string {
+  if (/VIP|未登录/.test(reason)) {
+    return `${PROVIDER_LABEL[track.provider] ?? track.provider} 曲目为 VIP/需登录：请在「账号」页登录后播放`
+  }
+  if (/NETEASE_URL/.test(reason)) return '网易云无可用音源（版权限制或已下架）'
+  return reason || '无法获取播放地址'
+}
+
+async function handleUnplayable(
+  failedTrack: Track,
+  myToken: number,
+  reason: string,
+  opts: PlayOpts,
+): Promise<boolean> {
+  const recovery = ensureRecovery(failedTrack)
+  const advances = opts.advances ?? 0
+
+  // 1) 跨平台同名同歌手换源。
+  const alternates = await orderedAlternates(failedTrack.provider)
+  if (myToken !== playSerial) return false
+  for (const provider of alternates) {
+    if (Date.now() > recovery.deadlineAt || recovery.attempts >= MAX_PROVIDER_ATTEMPTS) break
+    recovery.attempts += 1
+    let candidate: Track | undefined
+    try {
+      const query = `${failedTrack.name} ${failedTrack.artists[0] ?? ''}`.trim()
+      const { tracks } = await api.search(query, 12)
+      candidate = tracks.find(item => item.provider === provider && isSameTitleArtist(failedTrack, item))
+    } catch { continue }
+    if (myToken !== playSerial) return false
+    if (!candidate || recovery.visited.has(keyOf(candidate))) continue
+    recovery.visited.add(keyOf(candidate))
+    let probe = await api.songUrl(candidate.id, getQualityPref(), candidate.mediaMid)
+    if (!probe.url) probe = await api.songUrl(candidate.id, 'standard', candidate.mediaMid)
+    if (myToken !== playSerial) return false
+    if (!probe.url) continue
+    // 命中：把队列中的当前项替换为可播的跨平台版本并接续播放（depth=1 防递归）。
+    const queue = [...state.queue]
+    queue[state.index] = candidate
+    set({ queue, note: `已自动切换音源（${PROVIDER_LABEL[provider] ?? provider}）` })
+    return await fetchAndCommit(candidate, { depth: 1, advances }, myToken)
+  }
+
+  // 2) 换源无果：队列里还有别的歌就跳下一首（限次，防循环扫描）。
+  recovery.visited.add(keyOf(failedTrack))
+  if (state.queue.length > 1 && advances < MAX_QUEUE_ADVANCES && Date.now() <= recovery.deadlineAt) {
+    for (let step = 1; step < state.queue.length; step++) {
+      const index = (state.index + step) % state.queue.length
+      const nextTrack = state.queue[index]
+      if (!nextTrack || recovery.visited.has(keyOf(nextTrack))) continue
+      recovery.advances = advances + 1
+      recovery.visited.add(keyOf(nextTrack))
+      set({ note: '已跳过不可播放歌曲', index })
+      return await fetchAndCommit(nextTrack, { depth: 0, advances: advances + 1 }, myToken)
     }
-  } catch { /* 回退尽力而为 */ }
-  return undefined
-}
+  }
 
-function normalizeName(name: string): string {
-  return name.replace(/[\s（）()【】\[\]-—_·.,，。!！?？'’"]+/g, '').toLowerCase()
-}
-
-/** 用回退曲目替换队列中的当前曲目并立即播放。 */
-function replaceCurrent(track: Track): void {
-  const queue = [...state.queue]
-  queue[state.index] = track
-  set({ queue })
-  jumpTo(state.index)
+  // 3) 终局：明确的失败原因。
+  activeRecovery = undefined
+  set({ loadingUrl: false, error: friendlyReason(reason, failedTrack) })
+  return false
 }
 
 async function loadLyric(trackId: string): Promise<void> {
@@ -364,6 +482,9 @@ export function startAiBridge(): void {
   const flags = globalThis as Record<string, unknown>
   if (flags[BRIDGE_FLAG] === true) return
   flags[BRIDGE_FLAG] = true
+
+  // 平台登录态预取（换源排序用）。
+  void refreshPlatforms()
 
   window.setInterval(() => {
     void bridgePoll().then(commands => {
