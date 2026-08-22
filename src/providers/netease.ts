@@ -244,11 +244,24 @@ export async function likedTracks(max = 300): Promise<Track[]> {
   }
 }
 
-/** 匿名可用的热歌榜（网易云「热歌榜」id 3778678），用于随机填充。 */
-export async function chartTracks(limit = 60): Promise<Track[]> {
+/** 匿名可用的公开榜单曲目。 */
+export async function chartTracksById(chartId: string, limit = 60): Promise<Track[]> {
   try {
-    const r = await invoke<NcmResult>(lib.playlist_track_all, { id: '3778678', limit, timestamp: Date.now() })
+    const r = await invoke<NcmResult>(lib.playlist_track_all, { id: chartId, limit, timestamp: Date.now() })
     const songs: AnyRecord[] = Array.isArray(r.body?.songs) ? r.body.songs : []
+    return songs.map(song => mapTrack(song)).filter((t): t is Track => !!t)
+  } catch {
+    return []
+  }
+}
+
+/** 登录用户的每日个性化推荐（需登录）。 */
+export async function dailyRecommend(): Promise<Track[]> {
+  const cookie = loadAuth().neteaseCookie
+  if (!cookie) return []
+  try {
+    const r = await invoke<NcmResult>(lib.recommend_songs, { cookie, timestamp: Date.now() })
+    const songs: AnyRecord[] = Array.isArray(r.body?.data?.dailySongs) ? r.body.data.dailySongs : []
     return songs.map(song => mapTrack(song)).filter((t): t is Track => !!t)
   } catch {
     return []

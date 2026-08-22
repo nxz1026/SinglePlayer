@@ -210,6 +210,20 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       return { queued: pushCommand(command) }
     }),
 
+    // ---- 推荐：登录→每日个性化；未登录→随机公开榜 ----
+    get(`${API_PREFIX}/recommend`, async () => {
+      const daily = await netease.dailyRecommend()
+      if (daily.length) return { source: 'netease-daily', title: '每日推荐', tracks: daily.slice(0, 30) }
+      const charts = [
+        { id: '3778678', name: '热歌榜' },
+        { id: '19723756', name: '飙升榜' },
+        { id: '3779629', name: '新歌榜' },
+      ]
+      const pick = charts[Math.floor(Math.random() * charts.length)] ?? charts[0]!
+      const tracks = await netease.chartTracksById(pick.id, 30)
+      return { source: pick.name, title: `${pick.name} · 随机推荐`, tracks }
+    }),
+
     // ---- 随便听听：曲库+红心 Top30 混入 6 首随机，打乱返回 ----
     get(`${API_PREFIX}/shuffle-mix`, async () => ({ tracks: await buildShuffleMix() })),
 
@@ -341,7 +355,7 @@ async function buildShuffleMix(): Promise<import('./providers/types.ts').Track[]
 
   if (extras.length < 6) {
     try {
-      const chart = shuffleInPlace(await netease.chartTracks(60))
+      const chart = shuffleInPlace(await netease.chartTracksById('3778678', 60))
       for (const track of chart) {
         if (extras.length >= 6) break
         if (seen.has(trackKey(track))) continue

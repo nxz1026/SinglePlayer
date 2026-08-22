@@ -45,10 +45,10 @@ function findLineIndex(lines: LyricLine[], now: number): number {
   return found
 }
 
-const FONT = '700 24px "Segoe UI", system-ui, -apple-system, sans-serif'
-const BASE_COLOR = 'rgba(154,163,199,0.85)'
+const FONT = '700 20px "Segoe UI", system-ui, -apple-system, sans-serif'
+const BASE_COLOR = 'rgba(154,163,199,0.75)'
 const HI_COLOR = '#ffffff'
-const TRANS_COLOR = '#8be9fd'
+const TRANS_COLOR = 'rgba(139,233,253,0.6)'
 
 export function Karaoke(): React.ReactElement | null {
   const lyric = usePlayer(s => s.lyric)
@@ -125,18 +125,16 @@ export function Karaoke(): React.ReactElement | null {
         ctx!.rect(x - 1, y - cssH, clipWidth + 2, cssH * 2)
         ctx!.clip()
         ctx!.fillStyle = HI_COLOR
-        ctx!.shadowColor = 'rgba(124,92,255,0.9)'
-        ctx!.shadowBlur = 10
         ctx!.fillText(line.text, x, y)
         ctx!.restore()
       }
 
-      // 翻译行（小字，跟随高亮色）
+      // 翻译行（小字）
       if (line.translation) {
-        ctx!.font = '500 12px "Segoe UI", system-ui, sans-serif'
-        ctx!.fillStyle = karaoke && progress > 0.5 ? TRANS_COLOR : 'rgba(139,233,253,0.55)'
+        ctx!.font = '500 11px "Segoe UI", system-ui, sans-serif'
+        ctx!.fillStyle = TRANS_COLOR
         ctx!.textBaseline = 'top'
-        ctx!.fillText(line.translation, Math.max(8, (cssW - ctx!.measureText(line.translation).width) / 2), y + 15)
+        ctx!.fillText(line.translation, Math.max(8, (cssW - ctx!.measureText(line.translation).width) / 2), y + 13)
       }
       ctx!.restore()
     }
@@ -157,10 +155,9 @@ export function Karaoke(): React.ReactElement | null {
       const centerY = cssH / 2 - 6
       const current = index >= 0 ? lines[index] : undefined
       if (current) drawLine(current, index, now, centerY, 1, payload.source === 'yrc-word')
+      // 只保留当前行+下一行，界面更清爽
       const nextLine = lines[index + 1]
-      if (nextLine && nextLine.text) drawLine(nextLine, index + 1, now, cssH - 14, 0.45, false)
-      const prev = index > 0 ? lines[index - 1] : undefined
-      if (prev && prev.text) drawLine(prev, index - 1, now, 12, 0.3, false)
+      if (nextLine && nextLine.text) drawLine(nextLine, index + 1, now, cssH - 12, 0.4, false)
     }
 
     const tick = (): void => { render(); raf = requestAnimationFrame(tick) }

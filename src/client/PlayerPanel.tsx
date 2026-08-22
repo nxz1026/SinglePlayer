@@ -1,5 +1,5 @@
 /**
- * 播放器面板 —— 搜索 / 队列 / 登录 三 Tab + 底部正在播放控制条。
+ * 播放器面板 —— 搜索 / 曲库 / 队列 / 账号 四 Tab + 底部正在播放控制条。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -11,7 +11,6 @@ import {
   clearQueue,
   cycleMode,
   currentLyricLines,
-  currentTrack,
   getPlayerState,
   getQualityPref,
   next,
@@ -24,8 +23,18 @@ import {
   setVolume,
   startRandomMix,
   toggle,
+  toggleShowLyric,
   usePlayer,
 } from './player.ts'
+import {
+  createCustomList,
+  deleteCustomList,
+  isFavorite,
+  loadLibrary,
+  removeFromList,
+  toggleFavorite,
+  useLibrary,
+} from './library.ts'
 import type { Track } from '../providers/types.ts'
 
 const REPO_URL = 'https://github.com/nxz1026/SinglePlayer'
@@ -39,6 +48,8 @@ const QUALITY_LABEL: Record<string, string> = {
   hires: 'Hi-Res',
 }
 
+const HISTORY_KEY = 'dshm-search-history'
+
 function fmt(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00'
   const m = Math.floor(seconds / 60)
@@ -46,7 +57,7 @@ function fmt(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 export function Surface({ open, onClose }: { open: boolean; onClose: () => void }): React.ReactElement | null {
-  const [tab, setTab] = useState<'search' | 'queue' | 'auth' | 'settings'>('search')
+  const [tab, setTab] = useState<'search' | 'library' | 'queue' | 'auth' | 'settings'>('search')
   if (!open) return null
   return (
     <div className="dshm-panel">
@@ -55,7 +66,7 @@ export function Surface({ open, onClose }: { open: boolean; onClose: () => void 
         <span className="dshm-logo">♪</span>
         <span className="dshm-title">单身汉播放器</span>
         <a className="dshm-gh" href={REPO_URL} target="_blank" rel="noreferrer" title="GitHub 仓库" aria-label="GitHub 仓库">
-          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true">
             <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
           </svg>
         </a>
@@ -71,6 +82,7 @@ export function Surface({ open, onClose }: { open: boolean; onClose: () => void 
       {tab !== 'settings' && (
         <div className="dshm-tabs">
           <button type="button" className={tab === 'search' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('search')}>搜索</button>
+          <button type="button" className={tab === 'library' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('library')}>曲库</button>
           <button type="button" className={tab === 'queue' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('queue')}>
             队列{getPlayerState().queue.length > 0 ? `(${getPlayerState().queue.length})` : ''}
           </button>
@@ -79,6 +91,7 @@ export function Surface({ open, onClose }: { open: boolean; onClose: () => void 
       )}
       <div className="dshm-body">
         {tab === 'search' && <SearchTab />}
+        {tab === 'library' && <LibraryTab />}
         {tab === 'queue' && <QueueTab />}
         {tab === 'auth' && <AuthTab />}
         {tab === 'settings' && <SettingsView />}
@@ -190,12 +203,27 @@ function SettingsView(): React.ReactElement {
 
 // ---------------------------------------------------------------- 搜索
 
+function readHistory(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') as unknown
+    return Array.isArray(raw) ? raw.filter(item => typeof item === 'string').slice(0, 8) : []
+  } catch {
+    return []
+  }
+}
+
+function saveHistory(keyword: string): string[] {
+  const history = [keyword, ...readHistory().filter(item => item !== keyword)].slice(0, 8)
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
+  return history
+}
+
 function SearchTab(): React.ReactElement {
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState<Track[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [history, setHistory] = useState<string[]>(readHistory)
 
   const doSearch = useCallback(async (kw: string) => {
     const text = kw.trim()
@@ -205,6 +233,7 @@ function SearchTab(): React.ReactElement {
     try {
       const { tracks } = await api.search(text, 20)
       setResults(tracks)
+      setHistory(saveHistory(text))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -219,7 +248,6 @@ function SearchTab(): React.ReactElement {
         onSubmit={event => { event.preventDefault(); void doSearch(keyword) }}
       >
         <input
-          ref={inputRef}
           className="dshm-input"
           placeholder="搜索歌曲 / 歌手…"
           value={keyword}
@@ -227,6 +255,24 @@ function SearchTab(): React.ReactElement {
         />
         <button type="submit" className="dshm-go" disabled={busy}>{busy ? '…' : '搜'}</button>
       </form>
+      {history.length > 0 && (
+        <div className="dshm-history">
+          {history.map(item => (
+            <button
+              key={item}
+              type="button"
+              className="dshm-chip-hist"
+              onClick={() => { setKeyword(item); void doSearch(item) }}
+            >{item}</button>
+          ))}
+          <button
+            type="button"
+            className="dshm-chip-hist dshm-chip-clear"
+            title="清空搜索记录"
+            onClick={() => { localStorage.removeItem(HISTORY_KEY); setHistory([]) }}
+          >清空</button>
+        </div>
+      )}
       {error && <div className="dshm-err">{error}</div>}
       {results.length > 0 && (
         <div className="dshm-playall-row">
@@ -250,9 +296,16 @@ function SearchTab(): React.ReactElement {
 
 // ---------------------------------------------------------------- 行
 
-function Row({ track, children }: { track: Track; children?: React.ReactNode }): React.ReactElement {
+function Row({ track, children, onRemove }: {
+  track: Track
+  children?: React.ReactNode
+  /** 提供时显示「从列表移除」按钮（曲库自定义列表用）。 */
+  onRemove?: () => void
+}): React.ReactElement {
   const currentId = usePlayer(s => s.queue[s.index]?.id)
   const active = currentId === track.id
+  const favKey = `${track.provider}:${track.songId}`
+  const fav = isFavorite(favKey)
   return (
     <div className={active ? 'dshm-item dshm-item-active' : 'dshm-item'}>
       <button type="button" className="dshm-item-main" onClick={() => playTrack(track)}>
@@ -268,8 +321,134 @@ function Row({ track, children }: { track: Track; children?: React.ReactNode }):
         </span>
         {track.durationMs > 0 && <span className="dshm-dur">{fmt(track.durationMs / 1000)}</span>}
       </button>
+      {onRemove && (
+        <button type="button" className="dshm-icon" title="从列表移除" onClick={onRemove}>✕</button>
+      )}
+      <button
+        type="button"
+        className={fav ? 'dshm-heart dshm-heart-on' : 'dshm-heart'}
+        title="本地红心"
+        onClick={() => { void toggleFavorite(track) }}
+      >{fav ? '♥' : '♡'}</button>
       {children}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------- 曲库（推荐 + 多列表）
+
+interface RecommendState {
+  loading: boolean
+  source: string
+  title: string
+  tracks: Track[]
+}
+
+function LibraryTab(): React.ReactElement {
+  const library = useLibrary()
+  const [selected, setSelected] = useState('fav')
+  const [newListName, setNewListName] = useState('')
+  const [rec, setRec] = useState<RecommendState>({ loading: true, source: '', title: '', tracks: [] })
+  const [recVisible, setRecVisible] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    api.recommend().then(data => {
+      if (alive) setRec({ loading: false, ...data })
+    }).catch(() => {
+      if (alive) setRec({ loading: false, source: '', title: '推荐暂不可用', tracks: [] })
+    })
+    return () => { alive = false }
+  }, [])
+
+  // 首次进入曲库时刷新一次列表数据
+  useEffect(() => { void loadLibrary() }, [])
+
+  const selectedList = library.lists.find(list => list.id === selected)
+
+  return (
+    <>
+      {/* ---- 推荐区 ---- */}
+      <div className="dshm-sec-head">
+        <span className="dshm-sec-title">{rec.loading ? '推荐加载中…' : `🎵 ${rec.title}`}</span>
+        <button type="button" className="dshm-mini" onClick={() => setRecVisible(value => !value)}>
+          {recVisible ? '收起' : '展开'}
+        </button>
+      </div>
+      {recVisible && !rec.loading && rec.tracks.length > 0 && (
+        <>
+          <div className="dshm-playall-row">
+            <button type="button" className="dshm-mini" onClick={() => playAll(rec.tracks)}>▶ 播放全部</button>
+            <span className="dshm-set-state">
+              {rec.source === 'netease-daily' ? '基于你的网易云口味' : '公开榜单随机推荐'}
+            </span>
+          </div>
+          <div className="dshm-list">
+            {rec.tracks.slice(0, 10).map(track => <Row key={track.id} track={track} />)}
+          </div>
+        </>
+      )}
+
+      {/* ---- 列表选择器 ---- */}
+      <div className="dshm-sec-head">
+        <span className="dshm-sec-title">我的列表</span>
+        <form
+          className="dshm-newlist"
+          onSubmit={event => {
+            event.preventDefault()
+            const name = newListName.trim()
+            if (!name) return
+            void createCustomList(name).then(() => setNewListName(''))
+          }}
+        >
+          <input
+            className="dshm-input dshm-input-sm"
+            placeholder="新列表名…"
+            value={newListName}
+            onChange={event => setNewListName(event.target.value)}
+          />
+          <button type="submit" className="dshm-mini">＋</button>
+        </form>
+      </div>
+      <div className="dshm-libchips">
+        {library.lists.map(list => (
+          <button
+            key={list.id}
+            type="button"
+            className={selected === list.id ? 'dshm-chip-hist dshm-chip-on' : 'dshm-chip-hist'}
+            onClick={() => setSelected(list.id)}
+          >
+            {list.kind === 'favorites' ? '♥ ' : ''}{list.name} ({list.tracks.length})
+          </button>
+        ))}
+      </div>
+
+      {/* ---- 选中列表的曲目 ---- */}
+      {selectedList && selectedList.tracks.length > 0 && (
+        <div className="dshm-playall-row">
+          <button type="button" className="dshm-mini" onClick={() => playAll(selectedList.tracks)}>▶ 播放全部</button>
+          {selectedList.kind !== 'favorites' && (
+            <button
+              type="button"
+              className="dshm-mini"
+              onClick={() => { void deleteCustomList(selectedList.id); setSelected('fav') }}
+            >删除列表</button>
+          )}
+        </div>
+      )}
+      <div className="dshm-list">
+        {(selectedList?.tracks ?? []).map(track => (
+          <Row
+            key={`${track.provider}:${track.songId}`}
+            track={track}
+            onRemove={() => { void removeFromList(selectedList!.id, track) }}
+          />
+        ))}
+        {selectedList && !selectedList.tracks.length && (
+          <div className="dshm-empty">列表为空<br />在搜索或推荐里点 ♡ 收藏到这里</div>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -394,7 +573,9 @@ function NowPlaying(): React.ReactElement | null {
   const note = usePlayer(s => s.note)
   const volume = usePlayer(s => s.volume)
   const mode = usePlayer(s => s.mode)
+  const showLyric = usePlayer(s => s.showLyric)
   const lyricCurrent = usePlayer(s => {
+    if (!s.showLyric) return ''
     const lines = currentLyricLines()
     const time = s.currentTime
     let text = ''
@@ -417,9 +598,15 @@ function NowPlaying(): React.ReactElement | null {
           <div className="dshm-now-name">{track.name}</div>
           <div className="dshm-now-sub">{lyricCurrent || track.artists.join(' / ')}</div>
         </div>
+        <button
+          type="button"
+          className={showLyric ? 'dshm-lyrbtn dshm-lyrbtn-on' : 'dshm-lyrbtn'}
+          title={`界面歌词：${showLyric ? '开' : '关'}（不影响音箱同步）`}
+          onClick={toggleShowLyric}
+        >词</button>
         {loadingUrl && <span className="dshm-spin">◌</span>}
       </div>
-      <Karaoke />
+      {showLyric && <Karaoke />}
       <input
         className="dshm-range"
         type="range"
@@ -514,7 +701,7 @@ const CSS = `
 .dshm-now-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dshm-now-sub { font-size:11px; color:#9aa3c7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
 .dshm-spin { color:#7c5cff; animation:dshm-rotate 1.2s linear infinite; }
-.dshm-karaoke { width:100%; height:64px; display:block; margin-top:6px; }
+.dshm-karaoke { width:100%; height:52px; display:block; margin-top:4px; }
 @keyframes dshm-rotate { to { transform:rotate(360deg); } }
 .dshm-range { width:100%; accent-color:#7c5cff; height:4px; cursor:pointer; }
 .dshm-times { display:flex; justify-content:space-between; font-size:10.5px; color:#9aa3c7; margin:-2px 0 2px; }
@@ -545,4 +732,17 @@ const CSS = `
 .dshm-check-row input { accent-color:#7c5cff; }
 .dshm-set-row { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12.5px; }
 .dshm-note-ok { color:#6ee7a8; }
+.dshm-heart { background:none; border:none; cursor:pointer; font-size:13px; padding:4px 4px; color:#5b6488; }
+.dshm-heart:hover { color:#ff6b81; }
+.dshm-heart-on { color:#ff5c74 !important; }
+.dshm-history { display:flex; flex-wrap:wrap; gap:4px; }
+.dshm-chip-hist { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12); border-radius:999px; color:#cdd4f5; font-size:11px; padding:3px 9px; cursor:pointer; }
+.dshm-chip-hist:hover { border-color:#7c5cff; color:#fff; }
+.dshm-chip-on { background:rgba(124,92,255,.28); border-color:#7c5cff; color:#fff; }
+.dshm-chip-clear { opacity:.55; }
+.dshm-lyrbtn { flex:none; width:24px; height:24px; border-radius:50%; border:1px solid rgba(255,255,255,.2); background:none; color:#9aa3c7; font-size:11px; cursor:pointer; }
+.dshm-lyrbtn-on { color:#fff; border-color:#38bdf8; background:rgba(56,189,248,.18); }
+.dshm-karaoke-off { height:auto; padding:2px 0 4px; }
+.dshm-libchips { display:flex; flex-wrap:wrap; gap:4px; }
+.dshm-newlist { display:flex; gap:4px; align-items:center; margin-left:auto; }
 `

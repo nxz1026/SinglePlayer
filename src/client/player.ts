@@ -27,6 +27,7 @@ export interface PlayerState {
   volume: number
   mode: PlayMode
   lyric: LyricPayload
+  showLyric: boolean
 }
 
 const initial: PlayerState = {
@@ -41,6 +42,7 @@ const initial: PlayerState = {
   volume: readVolume(),
   mode: readMode(),
   lyric: { lrc: '', tlyric: '', yrc: '', roma: '' },
+  showLyric: localStorage.getItem('dshm-showlyric') !== '0',
 }
 
 let state: PlayerState = initial
@@ -473,6 +475,13 @@ export function getQualityPref(): string {
 
 export function setQualityPref(quality: string): void {
   localStorage.setItem('dshm-quality', quality)
+}
+
+/** 歌词显示开关（仅控制界面；不影响花再音箱同步）。 */
+export function toggleShowLyric(): void {
+  const next = !state.showLyric
+  localStorage.setItem('dshm-showlyric', next ? '1' : '0')
+  set({ showLyric: next })
 }
 
 export function currentTrack(): Track | undefined {

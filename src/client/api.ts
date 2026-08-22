@@ -74,6 +74,24 @@ export const api = {
   shuffleMix(): Promise<{ tracks: Track[] }> {
     return get('/shuffle-mix')
   },
+  recommend(): Promise<{ source: string; title: string; tracks: Track[] }> {
+    return get('/recommend')
+  },
+  getLists(): Promise<{ lists: LibraryList[]; recent: Track[]; plays: Record<string, { count: number; lastAt: number }> }> {
+    return get('/lists')
+  },
+  createList(name: string): Promise<{ list: LibraryList }> {
+    return post('/list/create', { name })
+  },
+  deleteList(id: string): Promise<{ deleted: boolean }> {
+    return post('/list/delete', { id })
+  },
+  addToList(id: string, track: Track): Promise<{ added: boolean }> {
+    return post('/list/add', { id, track })
+  },
+  removeFromList(id: string, trackId: string): Promise<{ removed: boolean }> {
+    return post('/list/remove', { id, trackId })
+  },
   recordPlay(track: Track): void {
     void fetch(`${BASE}/stats/play`, {
       method: 'POST',
@@ -97,6 +115,16 @@ export interface HaloStatus {
     screenColor?: { r: number; g: number; b: number }
   }
 }
+
+export interface LibraryList {
+  id: string
+  name: string
+  kind: 'favorites' | 'custom'
+  tracks: Track[]
+}
+
+/** 本地红心列表的固定 id（与宿主 library.json 对应）。 */
+export const FAV_LIST_ID = 'fav'
 
 /** 经宿主代理的音频地址。 */
 export function audioProxyUrl(url: string): string {
