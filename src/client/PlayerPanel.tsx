@@ -350,8 +350,7 @@ function Row({ track, children, onRemove }: {
 
 // ---------------------------------------------------------------- 曲库（推荐 + 多列表）
 
-interface RecommendState {
-  loading: boolean
+interface RecommendSection {
   source: string
   title: string
   tracks: Track[]
@@ -361,16 +360,20 @@ function LibraryTab(): React.ReactElement {
   const library = useLibrary()
   const [selected, setSelected] = useState('fav')
   const [newListName, setNewListName] = useState('')
-  const [rec, setRec] = useState<RecommendState>({ loading: true, source: '', title: '', tracks: [] })
+  const [sections, setSections] = useState<RecommendSection[]>([])
+  const [recIdx, setRecIdx] = useState(0)
+  const [recLoading, setRecLoading] = useState(true)
   const [recVisible, setRecVisible] = useState(true)
   const importRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let alive = true
     api.recommend().then(data => {
-      if (alive) setRec({ loading: false, ...data })
+      if (!alive) return
+      setSections(data.sections)
+      setRecLoading(false)
     }).catch(() => {
-      if (alive) setRec({ loading: false, source: '', title: '推荐暂不可用', tracks: [] })
+      if (alive) setRecLoading(false)
     })
     return () => { alive = false }
   }, [])
@@ -379,27 +382,40 @@ function LibraryTab(): React.ReactElement {
   useEffect(() => { void loadLibrary() }, [])
 
   const selectedList = library.lists.find(list => list.id === selected)
+  const recSection = sections[recIdx]
 
   return (
     <>
-      {/* ---- 推荐区 ---- */}
+      {/* ---- 推荐区（每日推荐 + 随机轮换榜单）---- */}
       <div className="dshm-sec-head">
-        <span className="dshm-sec-title">{rec.loading ? '推荐加载中…' : `🎵 ${rec.title}`}</span>
+        <span className="dshm-sec-title">{recLoading ? '推荐加载中…' : '🎵 为你推荐'}</span>
         <button type="button" className="dshm-mini" onClick={() => setRecVisible(value => !value)}>
           {recVisible ? '收起' : '展开'}
         </button>
       </div>
-      {recVisible && !rec.loading && rec.tracks.length > 0 && (
+      {recVisible && !recLoading && (
         <>
-          <div className="dshm-playall-row">
-            <button type="button" className="dshm-mini" onClick={() => playAll(rec.tracks)}>▶ 播放全部</button>
-            <span className="dshm-set-state">
-              {rec.source === 'netease-daily' ? '基于你的网易云口味' : '公开榜单随机推荐'}
-            </span>
+          <div className="dshm-libchips">
+            {sections.map((section, i) => (
+              <button
+                key={section.source}
+                type="button"
+                className={i === recIdx ? 'dshm-chip-hist dshm-chip-on' : 'dshm-chip-hist'}
+                title={section.source === 'netease-daily' ? '基于你的网易云口味' : '官方榜单（按日期轮换）'}
+                onClick={() => setRecIdx(i)}
+              >{section.title}</button>
+            ))}
           </div>
-          <div className="dshm-list">
-            {rec.tracks.slice(0, 10).map(track => <Row key={track.id} track={track} />)}
-          </div>
+          {recSection && (
+            <>
+              <div className="dshm-playall-row">
+                <button type="button" className="dshm-mini" onClick={() => playAll(recSection.tracks)}>▶ 播放全部</button>
+              </div>
+              <div className="dshm-list">
+                {recSection.tracks.slice(0, 10).map(track => <Row key={track.id} track={track} />)}
+              </div>
+            </>
+          )}
         </>
       )}
 

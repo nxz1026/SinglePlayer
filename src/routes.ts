@@ -210,19 +210,8 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       return { queued: pushCommand(command) }
     }),
 
-    // ---- 推荐：登录→每日个性化；未登录→随机公开榜 ----
-    get(`${API_PREFIX}/recommend`, async () => {
-      const daily = await netease.dailyRecommend()
-      if (daily.length) return { source: 'netease-daily', title: '每日推荐', tracks: daily.slice(0, 30) }
-      const charts = [
-        { id: '3778678', name: '热歌榜' },
-        { id: '19723756', name: '飙升榜' },
-        { id: '3779629', name: '新歌榜' },
-      ]
-      const pick = charts[Math.floor(Math.random() * charts.length)] ?? charts[0]!
-      const tracks = await netease.chartTracksById(pick.id, 30)
-      return { source: pick.name, title: `${pick.name} · 随机推荐`, tracks }
-    }),
+    // ---- 推荐：登录→每日个性化；另附 1~2 个按日期随机轮换的官方榜单 ----
+    get(`${API_PREFIX}/recommend`, async () => ({ sections: await buildRecommendSections() })),
 
     // ---- 随便听听：曲库+红心 Top30 混入 6 首随机，打乱返回 ----
     get(`${API_PREFIX}/shuffle-mix`, async () => ({ tracks: await buildShuffleMix() })),
@@ -336,6 +325,78 @@ function shuffleInPlace<T>(items: T[]): T[] {
     ;[items[i], items[j]] = [items[j] as T, items[i] as T]
   }
   return items
+}
+
+/** 以日期为种子的伪随机：同一天稳定，隔天自动换新。 */
+function daySeed(): number {
+  const today = new Date()
+  const key = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`
+  let hash = 2166136261
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function pickSeeded<T>(items: T[], count: number): T[] {
+  const arr = [...items]
+  let seed = daySeed() || 1
+  const rand = (): number => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296
+    return seed / 4294967296
+  }
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j] as T, arr[i] as T]
+  }
+  return arr.slice(0, count)
+}
+
+/** 推荐分组：每日推荐（登录）+ 按日期随机轮换的官方榜单 1~2 个。 */
+async function buildRecommendSections(): Promise<Array<{ source: string; title: string; tracks: import('./providers/types.ts').Track[] }>> {
+  type Section = { source: string; title: string; tracks: import('./providers/types.ts').Track[] }
+  const sections: Section[] = []
+
+  // 1) 登录用户：每日个性化推荐。
+  try {
+    const daily = await netease.dailyRecommend()
+    if (daily.length) sections.push({ source: 'netease-daily', title: '每日推荐', tracks: daily.slice(0, 30) })
+  } catch { /* 尽力而为 */ }
+
+  // 2) 官方榜单目录 → 日期种子随机取 2 个（每天新鲜、当天稳定）。
+  let charts = await netease.toplist().catch(() => [] as Array<{ id: string; name: string }>)
+  if (!charts.length) {
+    charts = [
+      { id: '3778678', name: '热歌榜' },
+      { id: '19723756', name: '飙升榜' },
+      { id: '3779629', name: '新歌榜' },
+      { id: '2884035', name: '原创榜' },
+      { id: '991319590', name: '说唱榜' },
+      { id: '2809511371', name: '欧美热榜' },
+    ]
+  }
+  // 避免与已有分组重名，且跳过超大综合榜以外的重复。
+  const usedNames = new Set(sections.map(section => section.title))
+  const picked = pickSeeded(charts, 4)
+    .filter(chart => !usedNames.has(chart.name))
+    .slice(0, sections.length ? 2 : 2)
+
+  const results = await Promise.all(picked.map(async chart => ({
+    source: `chart-${chart.id}`,
+    title: chart.name,
+    tracks: await netease.chartTracksById(chart.id, 15).catch(() => [] as import('./providers/types.ts').Track[]),
+  })))
+  for (const result of results) {
+    if (result.tracks.length) sections.push(result)
+  }
+
+  // 兜底：极端情况下保证至少有一组。
+  if (!sections.length) {
+    const tracks = await netease.chartTracksById('3778678', 30)
+    if (tracks.length) sections.push({ source: 'chart-3778678', title: '热歌榜', tracks })
+  }
+  return sections
 }
 
 /** 混合池缓存：红心/曲库 10 分钟内复用，重复点击「随便听听」瞬时返回。 */

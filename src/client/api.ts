@@ -74,7 +74,7 @@ export const api = {
   shuffleMix(): Promise<{ tracks: Track[] }> {
     return get('/shuffle-mix')
   },
-  recommend(): Promise<{ source: string; title: string; tracks: Track[] }> {
+  recommend(): Promise<{ sections: Array<{ source: string; title: string; tracks: Track[] }> }> {
     return get('/recommend')
   },
   getLists(): Promise<{ lists: LibraryList[]; recent: Track[]; plays: Record<string, { count: number; lastAt: number }> }> {

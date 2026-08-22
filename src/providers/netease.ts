@@ -277,6 +277,19 @@ export async function chartTracksById(chartId: string, limit = 60): Promise<Trac
   }
 }
 
+/** 官方榜单目录（匿名可用）—— 推荐区的随机候选池。 */
+export async function toplist(): Promise<Array<{ id: string; name: string }>> {
+  try {
+    const r = await invoke<NcmResult>(lib.toplist, { timestamp: Date.now() })
+    const list: AnyRecord[] = Array.isArray(r.body?.list) ? r.body.list : []
+    return list
+      .map(item => ({ id: String(item?.id ?? ''), name: String(item?.name ?? '') }))
+      .filter(item => item.id && item.name)
+  } catch {
+    return []
+  }
+}
+
 /** 登录用户的每日个性化推荐（需登录）。 */
 export async function dailyRecommend(): Promise<Track[]> {
   const cookie = loadAuth().neteaseCookie
