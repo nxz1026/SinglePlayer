@@ -33,9 +33,11 @@ export const api = {
   search(keyword: string, limit = 20, offset = 0): Promise<SearchResponse> {
     return get(`/search?keyword=${encodeURIComponent(keyword)}&limit=${limit}&offset=${offset}`)
   },
-  songUrl(id: string, quality = 'exhigh', mediaMid?: string): Promise<SongUrlResult> {
+  async songUrl(id: string, quality = 'exhigh', mediaMid?: string): Promise<SongUrlResult> {
     const media = mediaMid ? `&mediaMid=${encodeURIComponent(mediaMid)}` : ''
-    return get(`/url?id=${encodeURIComponent(id)}&quality=${quality}${media}`)
+    // 路由包装为 { ok, result }，必须解包 result。
+    const payload = await get<{ result?: SongUrlResult }>(`/url?id=${encodeURIComponent(id)}&quality=${quality}${media}`)
+    return payload.result ?? { url: '', reason: '空响应' }
   },
   lyric(id: string): Promise<{ lyric: LyricPayload }> {
     return get(`/lyric?id=${encodeURIComponent(id)}`)
