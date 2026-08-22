@@ -196,11 +196,12 @@ export async function authStatus(): Promise<AuthStatusItem> {
   return item
 }
 
-/** 红心收藏（需登录）。 */
+/** 红心收藏（需登录）；同时失效红心缓存。 */
 export async function like(songId: string, liked: boolean): Promise<{ liked: boolean }> {
   const cookie = loadAuth().neteaseCookie
   if (!cookie) throw new Error('网易云未登录')
   await invoke(lib.like, { id: songId.replace(/\D/g, ''), like: liked, cookie, timestamp: Date.now() })
+  invalidateLikesCache()
   return { liked }
 }
 
@@ -217,27 +218,48 @@ export async function likeCheck(songId: string): Promise<{ liked: boolean }> {
   }
 }
 
-/** 已登录用户的红心歌曲全量（未登录返回空）。 */
+/** 红心曲目缓存（点赞/取消后失效）。 */
+let likesCacheAt = 0
+let likesCacheTracks: Track[] = []
+
+function invalidateLikesCache(): void {
+  likesCacheAt = 0
+  likesCacheTracks = []
+}
+
+/** 已登录用户的红心歌曲全量（未登录返回空；5 分钟缓存，并行分块拉取）。 */
 export async function likedTracks(max = 300): Promise<Track[]> {
   const cookie = loadAuth().neteaseCookie
   if (!cookie) return []
+  if (likesCacheTracks.length && Date.now() - likesCacheAt < 300_000) {
+    return likesCacheTracks.slice(0, max)
+  }
   try {
     const account = await invoke<NcmResult>(lib.user_account, { cookie })
     const uid = String(account.body?.account?.id ?? '')
     if (!uid) return []
     const likes = await invoke<NcmResult>(lib.likelist, { uid, cookie })
     const rawIds: unknown = likes.body?.ids ?? likes.body?.chunk?.slice?.(-1)?.[0]?.ids
-    const ids: string[] = Array.isArray(rawIds) ? rawIds.map(String) : []
+    const ids: string[] = Array.isArray(rawIds) ? rawIds.map(String).slice(0, max) : []
+    // song_detail 支持大批量逗号 id；按 200 一块并行请求。
+    const chunks: string[][] = []
+    for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200))
+    const details = await Promise.all(
+      chunks.map(chunk =>
+        invoke<NcmResult>(lib.song_detail, { ids: chunk.join(','), cookie }).catch(() => null),
+      ),
+    )
     const out: Track[] = []
-    for (let i = 0; i < Math.min(ids.length, max); i += 50) {
-      const chunk = ids.slice(i, i + 50)
-      const detail = await invoke<NcmResult>(lib.song_detail, { ids: chunk.join(','), cookie })
+    for (const detail of details) {
+      if (!detail) continue
       const songs: AnyRecord[] = Array.isArray(detail.body?.songs) ? detail.body.songs : []
       for (const song of songs) {
         const track = mapTrack(song)
         if (track) out.push(track)
       }
     }
+    likesCacheAt = Date.now()
+    likesCacheTracks = out
     return out
   } catch {
     return []

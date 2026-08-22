@@ -249,6 +249,20 @@ export function makeRoutes(ctx: Context): WebRoute[] {
     post(`${API_PREFIX}/list/remove`, async body => {
       return { removed: removeTrack(String(body.id ?? ''), String(body.trackId ?? '')) }
     }),
+    post(`${API_PREFIX}/list/import`, async body => {
+      const incoming = Array.isArray(body.lists) ? body.lists as Array<Record<string, unknown>> : []
+      let imported = 0
+      for (const raw of incoming) {
+        const name = String(raw.name ?? '').trim()
+        const tracks = Array.isArray(raw.tracks) ? raw.tracks as import('./providers/types.ts').Track[] : []
+        if (!name || !tracks.length) continue
+        const list = createList(name)
+        for (const track of tracks) {
+          if (addTrack(list.id, track) === 'added') imported += 1
+        }
+      }
+      return { lists: getLists().length, tracks: imported }
+    }),
     post(`${API_PREFIX}/stats/play`, async body => {
       const track = body.track as import('./providers/types.ts').Track | undefined
       if (!track?.provider || !track.songId) throw new Error('bad track')
@@ -324,11 +338,12 @@ function shuffleInPlace<T>(items: T[]): T[] {
   return items
 }
 
-/**
- * 随便听听：本地曲库 + 网易红心（已登录）合并去重 →
- * 按播放次数取 Top30 → 混入 6 首「纯随机」（剩余池优先，不足从热歌榜补）→ 整体打乱。
- */
-async function buildShuffleMix(): Promise<import('./providers/types.ts').Track[]> {
+/** 混合池缓存：红心/曲库 10 分钟内复用，重复点击「随便听听」瞬时返回。 */
+let mixBaseCache: { builtAt: number; ranked: import('./providers/types.ts').Track[]; restPool: import('./providers/types.ts').Track[] } | undefined
+const MIX_BASE_TTL = 10 * 60_000
+
+async function buildMixBase(): Promise<{ ranked: import('./providers/types.ts').Track[]; restPool: import('./providers/types.ts').Track[] }> {
+  if (mixBaseCache && Date.now() - mixBaseCache.builtAt < MIX_BASE_TTL) return mixBaseCache
   const seen = new Set<string>()
   const pool: import('./providers/types.ts').Track[] = []
   const pushUnique = (track?: import('./providers/types.ts').Track): void => {
@@ -348,10 +363,18 @@ async function buildShuffleMix(): Promise<import('./providers/types.ts').Track[]
   const scoreOf = (track: import('./providers/types.ts').Track): number =>
     stats.plays[trackKey(track)]?.count ?? 0
   const ranked = [...pool].sort((a, b) => scoreOf(b) - scoreOf(a))
+  mixBaseCache = { builtAt: Date.now(), ranked, restPool: ranked.slice(30) }
+  return mixBaseCache
+}
 
-  const top = ranked.slice(0, 30)
-  const restPool = shuffleInPlace(ranked.slice(30))
-  const extras = restPool.slice(0, 6)
+/**
+ * 随便听听：混合池 Top30 → 混入 6 首「纯随机」→ 整体打乱。
+ */
+async function buildShuffleMix(): Promise<import('./providers/types.ts').Track[]> {
+  const base = await buildMixBase()
+  const top = base.ranked.slice(0, 30)
+  const extras = shuffleInPlace([...base.restPool]).slice(0, 6)
+  const seen = new Set(top.concat(extras).map(t => trackKey(t)))
 
   if (extras.length < 6) {
     try {

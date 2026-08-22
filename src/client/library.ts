@@ -59,7 +59,7 @@ export function isFavorite(key: string): boolean {
   return !!fav?.tracks.some(track => `${track.provider}:${track.songId}` === key)
 }
 
-/** 切换本地红心；乐观更新，失败回滚。 */
+/** 切换本地红心；乐观更新，失败回滚。网易登录状态下双写平台红心。 */
 export async function toggleFavorite(track: Track): Promise<boolean> {
   const key = `${track.provider}:${track.songId}`
   const willAdd = !isFavorite(key)
@@ -68,11 +68,70 @@ export async function toggleFavorite(track: Track): Promise<boolean> {
   try {
     if (willAdd) await api.addToList(FAV_LIST_ID, track)
     else await api.removeFromList(FAV_LIST_ID, key)
-    return willAdd
   } catch {
     applyFavLocal(key, track, !willAdd) // 回滚
     return false
   }
+  // 双向同步：网易曲目且已登录 → 同步到平台红心（尽力而为）。
+  if (track.provider === 'netease') {
+    void neteaseLoggedIn().then(loggedIn => {
+      if (!loggedIn) return
+      api.neteaseLike(track.songId, willAdd).catch(() => {})
+    })
+  }
+  return willAdd
+}
+
+let neteaseLoginAt = 0
+let neteaseLoginValue = false
+
+async function neteaseLoggedIn(): Promise<boolean> {
+  if (Date.now() - neteaseLoginAt < 60_000) return neteaseLoginValue
+  try {
+    const { providers } = await api.authStatus()
+    const item = providers.find(entry => entry.provider === 'netease')
+    neteaseLoginValue = item?.loggedIn === true
+    neteaseLoginAt = Date.now()
+    return neteaseLoginValue
+  } catch {
+    return false
+  }
+}
+
+/** 导出全部列表为 JSON 文件下载。 */
+export function exportLibrary(lists: LibraryList[]): void {
+  const payload = {
+    app: 'dsh-music-huazai',
+    exportedAt: new Date().toISOString(),
+    lists: lists.filter(list => list.tracks.length > 0),
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `dsh-music-library-${new Date().toISOString().slice(0, 10)}.json`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+/** 从备份文件导入列表（新建同名自定义列表，曲目去重合并）。 */
+export async function importLibraryFile(file: File): Promise<number> {
+  const text = await file.text()
+  const parsed = JSON.parse(text) as { lists?: Array<{ name?: unknown; tracks?: unknown[] }> }
+  if (!Array.isArray(parsed.lists)) throw new Error('备份格式不正确')
+  let count = 0
+  for (const raw of parsed.lists) {
+    const name = String(raw.name ?? '').trim()
+    const tracks = Array.isArray(raw.tracks) ? raw.tracks : []
+    if (!name || !tracks.length) continue
+    const { list } = await api.createList(`${name} (导入)`)
+    for (const track of tracks) {
+      await api.addToList(list.id, track as Track)
+      count += 1
+    }
+  }
+  await loadLibrary()
+  return count
 }
 
 function applyFavLocal(key: string, track: Track, add: boolean): void {

@@ -29,6 +29,8 @@ import {
 import {
   createCustomList,
   deleteCustomList,
+  exportLibrary,
+  importLibraryFile,
   isFavorite,
   loadLibrary,
   removeFromList,
@@ -222,6 +224,7 @@ function SearchTab(): React.ReactElement {
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState<Track[]>([])
   const [busy, setBusy] = useState(false)
+  const [mixing, setMixing] = useState(false)
   const [error, setError] = useState('')
   const [history, setHistory] = useState<string[]>(readHistory)
 
@@ -255,6 +258,16 @@ function SearchTab(): React.ReactElement {
         />
         <button type="submit" className="dshm-go" disabled={busy}>{busy ? '…' : '搜'}</button>
       </form>
+      <button
+        type="button"
+        className="dshm-lucky"
+        disabled={mixing}
+        title="曲库+红心 Top30 混入随机新歌，打乱开播"
+        onClick={() => {
+          setMixing(true)
+          void startRandomMix().finally(() => setMixing(false))
+        }}
+      >{mixing ? '正在生成…' : '🎲 随便听听'}</button>
       {history.length > 0 && (
         <div className="dshm-history">
           {history.map(item => (
@@ -350,6 +363,7 @@ function LibraryTab(): React.ReactElement {
   const [newListName, setNewListName] = useState('')
   const [rec, setRec] = useState<RecommendState>({ loading: true, source: '', title: '', tracks: [] })
   const [recVisible, setRecVisible] = useState(true)
+  const importRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let alive = true
@@ -392,6 +406,21 @@ function LibraryTab(): React.ReactElement {
       {/* ---- 列表选择器 ---- */}
       <div className="dshm-sec-head">
         <span className="dshm-sec-title">我的列表</span>
+        <button type="button" className="dshm-mini" title="导出全部列表为 JSON 备份"
+          onClick={() => exportLibrary(library.lists)}>导出</button>
+        <button type="button" className="dshm-mini" title="从 JSON 备份导入列表"
+          onClick={() => importRef.current?.click()}>导入</button>
+        <input
+          ref={importRef}
+          type="file"
+          accept="application/json,.json"
+          className="dshm-file-hidden"
+          onChange={event => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void importLibraryFile(file)
+          }}
+        />
         <form
           className="dshm-newlist"
           onSubmit={event => {
@@ -421,33 +450,58 @@ function LibraryTab(): React.ReactElement {
             {list.kind === 'favorites' ? '♥ ' : ''}{list.name} ({list.tracks.length})
           </button>
         ))}
+        {library.recent.length > 0 && (
+          <button
+            type="button"
+            className={selected === 'recent' ? 'dshm-chip-hist dshm-chip-on' : 'dshm-chip-hist'}
+            onClick={() => setSelected('recent')}
+          >🕘 最近播放 ({library.recent.length})</button>
+        )}
       </div>
 
       {/* ---- 选中列表的曲目 ---- */}
-      {selectedList && selectedList.tracks.length > 0 && (
-        <div className="dshm-playall-row">
-          <button type="button" className="dshm-mini" onClick={() => playAll(selectedList.tracks)}>▶ 播放全部</button>
-          {selectedList.kind !== 'favorites' && (
-            <button
-              type="button"
-              className="dshm-mini"
-              onClick={() => { void deleteCustomList(selectedList.id); setSelected('fav') }}
-            >删除列表</button>
+      {selected === 'recent'
+        ? (
+            <>
+              {library.recent.length > 0 && (
+                <div className="dshm-playall-row">
+                  <button type="button" className="dshm-mini" onClick={() => playAll(library.recent)}>▶ 播放全部</button>
+                </div>
+              )}
+              <div className="dshm-list">
+                {library.recent.map(track => <Row key={`${track.provider}:${track.songId}`} track={track} />)}
+                {!library.recent.length && <div className="dshm-empty">还没有播放记录</div>}
+              </div>
+            </>
+          )
+        : (
+            <>
+              {selectedList && selectedList.tracks.length > 0 && (
+                <div className="dshm-playall-row">
+                  <button type="button" className="dshm-mini" onClick={() => playAll(selectedList.tracks)}>▶ 播放全部</button>
+                  {selectedList.kind !== 'favorites' && (
+                    <button
+                      type="button"
+                      className="dshm-mini"
+                      onClick={() => { void deleteCustomList(selectedList.id); setSelected('fav') }}
+                    >删除列表</button>
+                  )}
+                </div>
+              )}
+              <div className="dshm-list">
+                {(selectedList?.tracks ?? []).map(track => (
+                  <Row
+                    key={`${track.provider}:${track.songId}`}
+                    track={track}
+                    onRemove={() => { void removeFromList(selectedList!.id, track) }}
+                  />
+                ))}
+                {selectedList && !selectedList.tracks.length && (
+                  <div className="dshm-empty">列表为空<br />在搜索或推荐里点 ♡ 收藏到这里</div>
+                )}
+              </div>
+            </>
           )}
-        </div>
-      )}
-      <div className="dshm-list">
-        {(selectedList?.tracks ?? []).map(track => (
-          <Row
-            key={`${track.provider}:${track.songId}`}
-            track={track}
-            onRemove={() => { void removeFromList(selectedList!.id, track) }}
-          />
-        ))}
-        {selectedList && !selectedList.tracks.length && (
-          <div className="dshm-empty">列表为空<br />在搜索或推荐里点 ♡ 收藏到这里</div>
-        )}
-      </div>
     </>
   )
 }
@@ -620,12 +674,6 @@ function NowPlaying(): React.ReactElement | null {
       {error && <div className="dshm-err">{error}</div>}
       {!error && note && <div className="dshm-note dshm-note-ok">{note}</div>}
       <div className="dshm-controls">
-        <button
-          type="button"
-          className="dshm-icon"
-          title="随便听听：曲库+红心 Top30 混入随机新歌"
-          onClick={() => { void startRandomMix() }}
-        >🎲</button>
         <button type="button" className="dshm-icon" onClick={cycleMode} title="播放模式">{MODE_LABEL[mode]}</button>
         <button type="button" className="dshm-icon" onClick={prev}>⏮</button>
         <button type="button" className="dshm-playbtn" onClick={toggle}>{playing ? '⏸' : '▶'}</button>
@@ -745,4 +793,9 @@ const CSS = `
 .dshm-karaoke-off { height:auto; padding:2px 0 4px; }
 .dshm-libchips { display:flex; flex-wrap:wrap; gap:4px; }
 .dshm-newlist { display:flex; gap:4px; align-items:center; margin-left:auto; }
+.dshm-lucky { width:100%; border:1px solid rgba(124,92,255,.45); border-radius:10px; padding:8px 0; background:linear-gradient(135deg,rgba(124,92,255,.22),rgba(56,189,248,.18)); color:#eef1ff; font-size:13px; cursor:pointer; letter-spacing:.5px; }
+.dshm-lucky:hover { filter:brightness(1.2); }
+.dshm-lucky:disabled { opacity:.55; cursor:default; }
+.dshm-file-hidden { display:none; }
+.dshm-sec-head { display:flex; align-items:center; gap:6px; }
 `
