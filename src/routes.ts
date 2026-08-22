@@ -3,6 +3,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import { logError, logInfo } from './log.ts'
 import { proxyAudio } from './proxy/audio.ts'
 import * as netease from './providers/netease.ts'
 import * as qq from './providers/qq.ts'
@@ -62,7 +63,10 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       const query = new URL(req.url ?? '/', 'http://localhost').searchParams
       run(query).then(
         value => json(res, 200, { ok: true, ...(value as object) }),
-        error => json(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) }),
+        error => {
+          logError(`GET ${path}`, error)
+          json(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
+        },
       )
     },
   })
@@ -74,7 +78,10 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       return readJsonBody(req).then(body =>
         run(body).then(
           value => json(res, 200, { ok: true, ...(value as object) }),
-          error => json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }),
+          error => {
+            logError(`POST ${path}`, error)
+            json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) })
+          },
         ))
     },
   })
@@ -261,7 +268,9 @@ export function getNowPlaying(): NowPlayingReport | null {
 
 /** 注册全部路由并返回注销函数（供 ctx.effect 使用）。 */
 export function registerRoutes(ctx: Context): () => void {
-  const disposers = makeRoutes(ctx).map(route => ctx.webServer.register(route))
+  const routes = makeRoutes(ctx)
+  logInfo(`routes registered: ${routes.length}`)
+  const disposers = routes.map(route => ctx.webServer.register(route))
   return () => {
     for (const dispose of disposers) dispose()
   }

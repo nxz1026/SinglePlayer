@@ -13,6 +13,7 @@ import {
   buildScreenColorPacket, buildSpectrumPacket, buildTextPacket,
 } from './protocol.ts'
 import { dataDir } from '../store/auth.ts'
+import { logInfo, logWarn } from '../log.ts'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnyRecord = Record<string, any>
@@ -145,13 +146,17 @@ export class HaloSync {
       return true
     }
     const info = this.findDevice()
-    if (!info?.path) return false
+    if (!info?.path) {
+      logWarn('[halo] 未找到花再设备（USB 未连接或驱动未就绪）')
+      return false
+    }
     try {
       const dev = new this.hid.HID(info.path)
       dev.setNonBlocking(1)
       this.device = dev
       this.connected = true
       this.simulated = false
+      logInfo(`[halo] 已连接花再音箱`)
       this.applyScreenMode()
       return true
     } catch {
@@ -198,7 +203,10 @@ export class HaloSync {
       if (fails != null && fails > 0) this.featureFails[feature] = fails - 1
     } else if (feature !== 'text') {
       this.featureFails[feature] = (this.featureFails[feature] ?? 0) + 1
-      if (this.featureFails[feature] >= 3) this.featureDisabled[feature] = true
+      if (this.featureFails[feature] >= 3) {
+        this.featureDisabled[feature] = true
+        logWarn(`[halo] 特性 ` + feature + ` 连续失败，已临时禁用`)
+      }
     }
     return ok
   }
