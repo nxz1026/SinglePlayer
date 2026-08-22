@@ -3,25 +3,7 @@
  * 桥用"上报 + 命令队列"解耦：浏览器定期上报正在播放状态并取走待执行命令。
  */
 
-import type { Track } from './providers/types.ts'
-
-export interface NowPlayingReport {
-  trackId: string
-  name: string
-  artists: string[]
-  album: string
-  provider: string
-  positionSec: number
-  durationSec: number
-  playing: boolean
-}
-
-export type BridgeCommand =
-  | { type: 'play'; track: Track }
-  | { type: 'pause' }
-  | { type: 'resume' }
-  | { type: 'next' }
-  | { type: 'prev' }
+import type { BridgeCommand, NowPlayingReport, Track } from './providers/types.ts'
 
 const MAX_COMMANDS = 32
 

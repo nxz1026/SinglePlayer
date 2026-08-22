@@ -117,7 +117,7 @@ async function musicu(payload: AnyRecord, useCookie = true): Promise<AnyRecord> 
 // ---------------------------------------------------------------- sign
 
 /** Mineradio qqSearchSign 原样移植。 */
-export function searchSign(text: string): string {
+function searchSign(text: string): string {
   const hash = createHash('sha1').update(text).digest('hex')
   const part1 = [23, 14, 6, 36, 16, 40, 7, 19].map(index => hash[index]).join('')
   const part2 = [16, 1, 32, 12, 19, 27, 8, 5].map(index => hash[index]).join('')
@@ -134,8 +134,8 @@ export function albumCover(albumMid: string, size = 300): string {
   return `https://y.qq.com/music/photo_new/T002R${size}x${size}M000${albumMid}.jpg?max_age=2592000`
 }
 
-function mapTrack(track: AnyRecord): Track | undefined {
-  track = track ?? {}
+function mapTrack(raw: AnyRecord): Track | undefined {
+  const track = raw ?? {}
   const album: AnyRecord = track.album ?? {}
   const artists = ((track.singer ?? []) as AnyRecord[])
     .map(a => String(a?.name ?? ''))
@@ -313,13 +313,21 @@ export async function songUrl(mid: string, quality: Quality | string = 'hires', 
   const infos: AnyRecord[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
   const purls = infos.filter(item => item?.purl)
   const sips: string[] = Array.isArray(data?.sip) && data.sip.length ? data.sip : ['https://ws.stream.qqmusic.qq.com/']
+  // 并行探测：每个 purl 的多个 sip 并发，取最快通过者；最多试 2 个 purl，避免 25s 串行阻塞。
+  const MAX_PROBE_PURLS = 2
+  let probed = 0
   for (const info of purls) {
-    for (const sip of sips) {
-      const candidate = sip + String(info.purl)
-      if (await probePlayable(candidate)) {
-        const meta = candidates.find(item => item.filename === info.filename)
-        return { url: candidate, quality: meta?.label ?? info.filename, vipRequired: false }
-      }
+    if (probed >= MAX_PROBE_PURLS) break
+    probed++
+    try {
+      const url = await Promise.any(sips.map(sip => {
+        const candidate = sip + String(info.purl)
+        return probePlayable(candidate).then(ok => ok ? candidate : Promise.reject(new Error('unplayable')))
+      }))
+      const meta = candidates.find(item => item.filename === info.filename)
+      return { url, quality: meta?.label ?? info.filename, vipRequired: false }
+    } catch {
+      continue
     }
   }
   const first = purls[0]

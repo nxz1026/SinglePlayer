@@ -48,3 +48,28 @@ export interface AuthStatusItem {
   avatar?: string
   vipLabel?: string
 }
+
+// ---------------------------------------------------------------- 桥类型
+
+export interface NowPlayingReport {
+  trackId: string
+  name: string
+  artists: string[]
+  album: string
+  provider: string
+  positionSec: number
+  durationSec: number
+  playing: boolean
+}
+
+export type BridgeCommand =
+  | { type: 'play'; track: Track }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'next' }
+  | { type: 'prev' }
+
+/** 曲目唯一键 `${provider}:${songId}`。 */
+export function trackKey(track: Pick<Track, 'provider' | 'songId'>): string {
+  return `${track.provider}:${track.songId}`
+}

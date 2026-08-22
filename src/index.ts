@@ -17,13 +17,10 @@ export const name = 'music'
 export const inject = ['webServer', 'tools'] as const
 
 /** 插件配置。 */
-export interface Config {
-  /** 预留：花再同步默认开关（M6 启用）。 */
-  haloEnabled?: boolean
-}
+export interface Config {}
 
 /** Cordis 插件体。 */
 export function apply(ctx: Context, _config: Config = {}): void {
   ctx.effect(() => registerRoutes(ctx), 'music: routes')
-  registerTools(ctx)
+  ctx.effect(() => registerTools(ctx), 'music: tools')
 }

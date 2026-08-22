@@ -7,15 +7,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { pushCommand } from './bridge.ts'
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
-import type { BridgeCommand, NowPlayingReport } from './bridge.ts'
 import { getNowPlaying } from './routes.ts'
+import type { BridgeCommand, NowPlayingReport } from './providers/types.ts'
 import * as netease from './providers/netease.ts'
 import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
 import type { ProviderId, Track } from './providers/types.ts'
-
-/** 工具注册需要的服务。 */
-export const inject = ['tools'] as const
 
 interface SearchHit {
   id: string
@@ -46,8 +43,13 @@ function formatHits(hits: SearchHit[]): string {
 
 const trackSummary = (track: Track): string => `${track.name} - ${track.artists.join(' / ')}`
 
-export function registerTools(ctx: Context): void {
-  ctx.tools.register(defineTool({
+export function registerTools(ctx: Context): () => void {
+  const disposes: Array<() => void> = []
+  const reg = (tool: Parameters<typeof ctx.tools.register>[0]) => {
+    const dispose: unknown = ctx.tools.register(tool)
+    if (typeof dispose === 'function') disposes.push(dispose as () => void)
+  }
+  reg(defineTool({
     name: 'music_search',
     description: '搜索音乐（聚合网易云与QQ音乐）。返回曲目 id 列表，可用 music_play 的 track_id 参数播放。',
     parameters: {
@@ -64,7 +66,7 @@ export function registerTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  reg(defineTool({
     name: 'music_play',
     description: '播放指定歌曲。优先传 track_id（来自 music_search）；只传 query 时自动选第一首。用户说"放一首XX"用这个。',
     parameters: {
@@ -108,7 +110,7 @@ export function registerTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  reg(defineTool({
     name: 'music_control',
     description: '控制播放器：pause(暂停)/resume(继续)/next(下一首)/prev(上一首)。',
     parameters: {
@@ -129,7 +131,7 @@ export function registerTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  reg(defineTool({
     name: 'music_now_playing',
     description: '查询当前播放状态：正在播放的曲名、歌手、进度、是否暂停。',
     parameters: {},
@@ -142,7 +144,7 @@ export function registerTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  reg(defineTool({
     name: 'music_lyric',
     description: '获取歌词文本（LRC）。不传 track_id 时返回当前播放歌曲的歌词。',
     parameters: {
@@ -173,6 +175,7 @@ export function registerTools(ctx: Context): void {
       return { lyric }
     },
   }))
+  return () => { for (const dispose of disposes) dispose() }
 }
 
 function nowPlayingText(): Record<string, unknown> {

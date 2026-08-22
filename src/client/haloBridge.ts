@@ -19,10 +19,11 @@ let payload: KaraokePayload = { lines: [], source: 'line' }
 let lyricSig = ''
 
 function activeLineAt(now: number): string {
-  for (const line of payload.lines) {
-    if (line.t > now) break
+  for (let i = 0; i < payload.lines.length; i++) {
+    const line = payload.lines[i]
+    if (!line || line.t > now) break
     if (line.text) {
-      const next = payload.lines[payload.lines.indexOf(line) + 1]
+      const next = payload.lines[i + 1]
       if (!next || next.t > now) return line.text
     }
   }

@@ -35,7 +35,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "NeteaseCloudMusicApi": "^4.32.0",
+    "NeteaseCloudMusicApi": "^4.32.0"
+  },
+  "optionalDependencies": {
     "node-hid": "^3.4.0"
   },
   "peerDependencies": {

@@ -28,7 +28,7 @@ interface HaloConfig {
 }
 
 const DEFAULT_CONFIG: HaloConfig = {
-  enabled: true,
+  enabled: false,
   align: 'center',
   dynamicScroll: false,
   idleClockWhenPaused: true,
@@ -47,7 +47,7 @@ function loadHid(): AnyRecord | null {
     const hid = require_('node-hid')
     if (hid && typeof hid.setDriverType === 'function') {
       // Windows 上切原生 HID 驱动，64 字节整包直写（首字节即报告 ID）。
-      try { hid.setDriverType('windows') } catch { /* 忽略 */ }
+      try { if (process.platform === 'win32') hid.setDriverType('windows') } catch { /* 忽略 */ }
     }
     return hid
   } catch {
@@ -66,6 +66,7 @@ export class HaloSync {
   private songTextUntil = 0
   private featureFails: Record<string, number> = {}
   private featureDisabled: Record<string, boolean> = {}
+  private featureDisabledAt: Record<string, number> = {}
 
   constructor() {
     this.config = this.loadConfig()
@@ -197,7 +198,13 @@ export class HaloSync {
 
   /** 特性安全降级：非文字包连续 3 次失败则临时禁用该特性，保住歌词通道。 */
   private sendFeature(feature: string, packet: Buffer): boolean {
-    if (feature !== 'text' && this.featureDisabled[feature] === true) return false
+    // 已禁用特性：满 5 分钟后自动解禁重试一次，避免永久失效。
+    if (feature !== 'text' && this.featureDisabled[feature] === true) {
+      if (Date.now() - (this.featureDisabledAt[feature] ?? 0) > 300_000) {
+        this.featureDisabled[feature] = false
+        this.featureFails[feature] = 0
+      } else return false
+    }
     const ok = this.sendRaw(packet)
     if (ok) {
       const fails = this.featureFails[feature]
@@ -206,7 +213,8 @@ export class HaloSync {
       this.featureFails[feature] = (this.featureFails[feature] ?? 0) + 1
       if (this.featureFails[feature] >= 3) {
         this.featureDisabled[feature] = true
-        logWarn(`[halo] 特性 ` + feature + ` 连续失败，已临时禁用`)
+        this.featureDisabledAt[feature] = Date.now()
+        logWarn(`[halo] 特性 ` + feature + ` 连续失败，已临时禁用（5 分钟后自动重试）`)
       }
     }
     return ok

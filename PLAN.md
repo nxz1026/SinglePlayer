@@ -29,20 +29,32 @@
 ├─ cordis.patch.yml        # 本地开发补丁（insert 插件）
 ├─ src/                    # 宿主半
 │  ├─ index.ts             # apply(ctx)：服务+工具注册
-│  ├─ config.ts            # Config Schema（端口、音质偏好等）
+│  ├─ bridge.ts            # 浏览器↔宿主桥（命令队列+上报）
+│  ├─ log.ts               # 统一日志
+│  ├─ routes.ts            # HTTP 路由（BFF、音频代理、登录、推荐、花再）
+│  ├─ tools.ts             # AI 工具集（5 个工具）
 │  ├─ providers/
-│  │  ├─ types.ts          # Provider 统一接口
+│  │  ├─ types.ts          # 统一模型与桥类型
 │  │  ├─ netease.ts        # 搜索/取流/YRC/扫码登录
 │  │  ├─ qq.ts             # fcg 直连/Cookie 登录/QRC
 │  │  └─ merge.ts          # 聚合搜索合并去重
 │  ├─ lyric/parse.ts       # LRC/YRC/QRC 解析（纯函数）
 │  ├─ proxy/audio.ts       # /audio 代理：Range + Referer 注入
-│  └─ store/auth.ts        # 登录态持久化（$DSH_HOME 下）
-├─ client/
-│  ├─ index.tsx            # 浏览器半 apply：slots 注入面板
-│  ├─ PlayerPanel.tsx      # 主面板：封面/控制条/队列/搜索
+│  ├─ store/
+│  │  ├─ auth.ts           # 登录态持久化（$DSH_HOME 下）
+│  │  └─ library.ts        # 本地曲库多列表 + 播放统计
+│  └─ halo/
+│     ├─ protocol.ts       # HID 协议包构建
+│     └─ sync.ts           # 花再同步服务（设备管理+事件入口）
+├─ client/                 # 浏览器半
+│  ├─ index.tsx            # 入口：挂载悬浮按钮 + 启动桥
+│  ├─ PlayerPanel.tsx      # 主面板（搜索/曲库/队列/账号/设置 Tab）
 │  ├─ Karaoke.tsx          # Canvas2D 逐字卡拉OK染色
-│  └─ engine.ts            # HTMLAudio 引擎+播放队列状态机
+│  ├─ player.ts            # HTMLAudio 引擎 + 播放队列 + 音源回退
+│  ├─ api.ts               # 类型化 fetch 封装
+│  ├─ library.ts           # 曲库客户端 store
+│  ├─ haloBridge.ts        # 花再 200ms 换行推送桥
+│  └─ qrLogin.ts           # 网易扫码登录生命周期
 ```
 
 ## 4. 关键设计
@@ -58,8 +70,8 @@
 4. 支持翻译行对齐显示；无逐字数据时退化为 smoothstep 整行进度
 
 ### 4.3 AI 工具集（M5）
-`search_music` / `play_music` / `pause` / `resume` / `next` / `prev`
-`now_playing` / `get_lyric` / `list_queue` / `add_to_queue`
+`music_search` / `music_play` / `music_control`（合并 pause/resume/next/prev）/
+`music_now_playing` / `music_lyric`
 
 ### 4.4 花再（HALO PIXELBAR）音箱歌词同步
 - **宿主半**：`node-hid` 打开设备，实现 64 字节文本包/布局包/UI 模式包协议；设备自动探测（vendor 关键词 halo/pixel/花再/pixelbar）

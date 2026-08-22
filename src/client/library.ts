@@ -5,7 +5,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { api, FAV_LIST_ID, type LibraryList } from './api.ts'
-import type { Track } from '../providers/types.ts'
+import { trackKey, type Track } from '../providers/types.ts'
 
 export interface LibraryState {
   loaded: boolean
@@ -56,12 +56,12 @@ export function useLibrary(): LibraryState {
 
 export function isFavorite(key: string): boolean {
   const fav = state.lists.find(list => list.id === FAV_LIST_ID)
-  return !!fav?.tracks.some(track => `${track.provider}:${track.songId}` === key)
+  return !!fav?.tracks.some(track => trackKey(track) === key)
 }
 
 /** 切换本地红心；乐观更新，失败回滚。网易登录状态下双写平台红心。 */
 export async function toggleFavorite(track: Track): Promise<boolean> {
-  const key = `${track.provider}:${track.songId}`
+  const key = trackKey(track)
   const willAdd = !isFavorite(key)
   // 乐观更新
   applyFavLocal(key, track, willAdd)
@@ -125,10 +125,8 @@ export async function importLibraryFile(file: File): Promise<number> {
     const tracks = Array.isArray(raw.tracks) ? raw.tracks : []
     if (!name || !tracks.length) continue
     const { list } = await api.createList(`${name} (导入)`)
-    for (const track of tracks) {
-      await api.addToList(list.id, track as Track)
-      count += 1
-    }
+    const results = await Promise.allSettled(tracks.map(track => api.addToList(list.id, track as Track)))
+    count += results.filter(r => r.status === 'fulfilled' && r.value.added).length
   }
   await loadLibrary()
   return count
@@ -139,7 +137,7 @@ function applyFavLocal(key: string, track: Track, add: boolean): void {
     if (list.id !== FAV_LIST_ID) return list
     const tracks = add
       ? [...list.tracks, track]
-      : list.tracks.filter(item => `${item.provider}:${item.songId}` !== key)
+      : list.tracks.filter(item => trackKey(item) !== key)
     return { ...list, tracks }
   })
   setLists(lists)
@@ -156,10 +154,10 @@ export async function deleteCustomList(id: string): Promise<void> {
 }
 
 export async function removeFromList(listId: string, track: Track): Promise<void> {
-  const key = `${track.provider}:${track.songId}`
+  const key = trackKey(track)
   const before = state.lists
   setLists(before.map(list => list.id === listId
-    ? { ...list, tracks: list.tracks.filter(item => `${item.provider}:${item.songId}` !== key) }
+    ? { ...list, tracks: list.tracks.filter(item => trackKey(item) !== key) }
     : list))
   try {
     await api.removeFromList(listId, key)

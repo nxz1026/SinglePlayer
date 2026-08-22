@@ -9,11 +9,13 @@ import * as netease from './providers/netease.ts'
 import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
 import { drainCommands, nowPlayingSnapshot, pushCommand, reportNowPlaying } from './bridge.ts'
-import { getHaloSync } from './halo/sync.ts'
-import { addTrack, createList, deleteList, getLists, getStats, recordPlay, removeTrack, trackKey } from './store/library.ts'
-import type { BridgeCommand, NowPlayingReport } from './bridge.ts'
+import { trackKey } from './providers/types.ts'
+import { addTrack, createList, deleteList, getLists, getStats, recordPlay, removeTrack } from './store/library.ts'
+import type { BridgeCommand, NowPlayingReport } from './providers/types.ts'
 import type { ProviderId, Quality } from './providers/types.ts'
 import { loadAuth, saveAuth } from './store/auth.ts'
+import { buildRecommendSections, buildShuffleMix } from './recommend.ts'
+import { makeHaloRoutes } from './halo/routes.ts'
 
 export const API_PREFIX = '/api/dsh-music'
 
@@ -34,7 +36,12 @@ function requireMethod(req: IncomingMessage, res: ServerResponse, method: string
 
 async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
+  let total = 0
+  for await (const chunk of req) {
+    chunks.push(chunk as Buffer)
+    total += (chunk as Buffer).length
+    if (total > 1_048_576) throw new Error('body too large（上限 1MB）')
+  }
   const text = Buffer.concat(chunks).toString('utf8')
   if (!text) return {}
   try {
@@ -55,7 +62,7 @@ export function parseTrackId(id: string): { provider: ProviderId; songId: string
   return { provider: provider as ProviderId, songId }
 }
 
-export function makeRoutes(ctx: Context): WebRoute[] {
+export function makeRoutes(_ctx: Context): WebRoute[] {
   const get = (path: string, run: (query: URLSearchParams) => Promise<unknown>): WebRoute => ({
     kind: 'exact',
     path,
@@ -259,32 +266,7 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       return {}
     }),
 
-    // ---- 花再（HALO PIXELBAR）同步 ----
-    get(`${API_PREFIX}/halo/status`, async () => ({ halo: getHaloSync().status() })),
-    post(`${API_PREFIX}/halo/config`, async body => {
-      const patch = (body.config ?? {}) as Record<string, unknown>
-      return { config: getHaloSync().setConfig(patch) }
-    }),
-    post(`${API_PREFIX}/halo/lyric`, async body => {
-      getHaloSync().onLyric(String(body.text ?? ''))
-      return {}
-    }),
-    post(`${API_PREFIX}/halo/song`, async body => {
-      getHaloSync().onSong(String(body.name ?? ''), String(body.artist ?? ''))
-      return {}
-    }),
-    post(`${API_PREFIX}/halo/state`, async body => {
-      getHaloSync().onPlayState(body.playing === true)
-      return {}
-    }),
-    post(`${API_PREFIX}/halo/command`, async body => {
-      const halo = getHaloSync()
-      const kind = String(body.kind ?? '')
-      if (kind === 'scene') return { ok: halo.sendScene(String(body.value ?? '')) }
-      if (kind === 'spectrum') return { ok: halo.sendSpectrum(Number(body.value) || 0) }
-      if (kind === 'clock') return { ok: halo.sendClock(Number(body.value) || 1) }
-      throw new Error(`bad kind: ${kind}`)
-    }),
+    ...makeHaloRoutes(),
   ]
 }
 
@@ -319,142 +301,10 @@ function normalizeCommand(body: Record<string, unknown>): BridgeCommand | undefi
   return undefined
 }
 
-function shuffleInPlace<T>(items: T[]): T[] {
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[items[i], items[j]] = [items[j] as T, items[i] as T]
-  }
-  return items
-}
-
-/** 以日期为种子的伪随机：同一天稳定，隔天自动换新。 */
-function daySeed(): number {
-  const today = new Date()
-  const key = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`
-  let hash = 2166136261
-  for (let i = 0; i < key.length; i++) {
-    hash ^= key.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
-}
-
-function pickSeeded<T>(items: T[], count: number): T[] {
-  const arr = [...items]
-  let seed = daySeed() || 1
-  const rand = (): number => {
-    seed = (seed * 1664525 + 1013904223) % 4294967296
-    return seed / 4294967296
-  }
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1))
-    ;[arr[i], arr[j]] = [arr[j] as T, arr[i] as T]
-  }
-  return arr.slice(0, count)
-}
-
-/** 推荐分组：每日推荐（登录）+ 按日期随机轮换的官方榜单 1~2 个。 */
-async function buildRecommendSections(): Promise<Array<{ source: string; title: string; tracks: import('./providers/types.ts').Track[] }>> {
-  type Section = { source: string; title: string; tracks: import('./providers/types.ts').Track[] }
-  const sections: Section[] = []
-
-  // 1) 登录用户：每日个性化推荐。
-  try {
-    const daily = await netease.dailyRecommend()
-    if (daily.length) sections.push({ source: 'netease-daily', title: '每日推荐', tracks: daily.slice(0, 30) })
-  } catch { /* 尽力而为 */ }
-
-  // 2) 官方榜单目录 → 日期种子随机取 2 个（每天新鲜、当天稳定）。
-  let charts = await netease.toplist().catch(() => [] as Array<{ id: string; name: string }>)
-  if (!charts.length) {
-    charts = [
-      { id: '3778678', name: '热歌榜' },
-      { id: '19723756', name: '飙升榜' },
-      { id: '3779629', name: '新歌榜' },
-      { id: '2884035', name: '原创榜' },
-      { id: '991319590', name: '说唱榜' },
-      { id: '2809511371', name: '欧美热榜' },
-    ]
-  }
-  // 避免与已有分组重名，且跳过超大综合榜以外的重复。
-  const usedNames = new Set(sections.map(section => section.title))
-  const picked = pickSeeded(charts, 4)
-    .filter(chart => !usedNames.has(chart.name))
-    .slice(0, sections.length ? 2 : 2)
-
-  const results = await Promise.all(picked.map(async chart => ({
-    source: `chart-${chart.id}`,
-    title: chart.name,
-    tracks: await netease.chartTracksById(chart.id, 15).catch(() => [] as import('./providers/types.ts').Track[]),
-  })))
-  for (const result of results) {
-    if (result.tracks.length) sections.push(result)
-  }
-
-  // 兜底：极端情况下保证至少有一组。
-  if (!sections.length) {
-    const tracks = await netease.chartTracksById('3778678', 30)
-    if (tracks.length) sections.push({ source: 'chart-3778678', title: '热歌榜', tracks })
-  }
-  return sections
-}
-
-/** 混合池缓存：红心/曲库 10 分钟内复用，重复点击「随便听听」瞬时返回。 */
-let mixBaseCache: { builtAt: number; ranked: import('./providers/types.ts').Track[]; restPool: import('./providers/types.ts').Track[] } | undefined
-const MIX_BASE_TTL = 10 * 60_000
-
-async function buildMixBase(): Promise<{ ranked: import('./providers/types.ts').Track[]; restPool: import('./providers/types.ts').Track[] }> {
-  if (mixBaseCache && Date.now() - mixBaseCache.builtAt < MIX_BASE_TTL) return mixBaseCache
-  const seen = new Set<string>()
-  const pool: import('./providers/types.ts').Track[] = []
-  const pushUnique = (track?: import('./providers/types.ts').Track): void => {
-    if (!track) return
-    const key = trackKey(track)
-    if (!key || seen.has(key)) return
-    seen.add(key)
-    pool.push(track)
-  }
-
-  for (const list of getLists()) for (const track of list.tracks) pushUnique(track)
-  try {
-    for (const track of await netease.likedTracks(300)) pushUnique(track)
-  } catch { /* 未登录/网络失败则跳过 */ }
-
-  const stats = getStats()
-  const scoreOf = (track: import('./providers/types.ts').Track): number =>
-    stats.plays[trackKey(track)]?.count ?? 0
-  const ranked = [...pool].sort((a, b) => scoreOf(b) - scoreOf(a))
-  mixBaseCache = { builtAt: Date.now(), ranked, restPool: ranked.slice(30) }
-  return mixBaseCache
-}
-
-/**
- * 随便听听：混合池 Top30 → 混入 6 首「纯随机」→ 整体打乱。
- */
-async function buildShuffleMix(): Promise<import('./providers/types.ts').Track[]> {
-  const base = await buildMixBase()
-  const top = base.ranked.slice(0, 30)
-  const extras = shuffleInPlace([...base.restPool]).slice(0, 6)
-  const seen = new Set(top.concat(extras).map(t => trackKey(t)))
-
-  if (extras.length < 6) {
-    try {
-      const chart = shuffleInPlace(await netease.chartTracksById('3778678', 60))
-      for (const track of chart) {
-        if (extras.length >= 6) break
-        if (seen.has(trackKey(track))) continue
-        seen.add(trackKey(track))
-        extras.push(track)
-      }
-    } catch { /* 榜单尽力而为 */ }
-  }
-
-  return shuffleInPlace([...top, ...extras])
-}
-
-/** 工具层读取正在播放快照。 */
+/** 工具层读取正在播放快照；浏览器 30s 无上报视为不在线，返回 null。 */
 export function getNowPlaying(): NowPlayingReport | null {
-  return nowPlayingSnapshot().report
+  const snap = nowPlayingSnapshot()
+  return snap.report && !snap.stale ? snap.report : null
 }
 
 /** 注册全部路由并返回注销函数（供 ctx.effect 使用）。 */

@@ -21,11 +21,6 @@ export const SCENE_CATEGORY = {
   clock: 0, game: 1, work: 2, reading: 3, cats: 4, dogs: 5, memes: 6, cyber: 7, waves: 8,
 } as const
 
-/** 氛围灯特效编号。 */
-export const AMBIENT_EFFECT = {
-  breathing: 1, tide: 2, static: 3, ripple: 4, flow: 5, dynamic: 6,
-} as const
-
 /** 文本校验和：acc=128; for b: acc += b+2; acc%256。 */
 export function checksumV1(textBytes: Buffer): number {
   let acc = 128
@@ -99,11 +94,6 @@ export function buildFrameV2(cmd: number, payload: Buffer): Buffer {
   const head = Buffer.from([0x2e, 0xaa, 0xed, cmd, (payload.length >> 8) & 0xff, payload.length & 0xff])
   const before = Buffer.concat([head, payload])
   return pad64(Buffer.concat([before, Buffer.from([checksumV2(before)])]))
-}
-
-/** 氛围灯：cmd 0x6B。 */
-export function buildAmbientPacket(effect: number, r: number, g: number, b: number, brightness: number, speed: number): Buffer {
-  return buildFrameV2(0x6b, Buffer.from([0x13, effect & 0xff, r & 0xff, g & 0xff, b & 0xff, brightness & 0xff, speed & 0xff]))
 }
 
 /** 音量联动：cmd 0x67，level 0-16。 */

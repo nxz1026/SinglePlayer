@@ -1,6 +1,6 @@
 /** 宿主 BFF 的类型化 fetch 封装（同源 /api/dsh-music/*）。 */
 
-import type { AuthStatusItem, LyricPayload, SongUrlResult, Track } from '../providers/types.ts'
+import type { AuthStatusItem, BridgeCommand, LyricPayload, NowPlayingReport, SongUrlResult, Track } from '../providers/types.ts'
 
 const BASE = '/api/dsh-music'
 
@@ -132,22 +132,6 @@ export function audioProxyUrl(url: string): string {
 }
 
 // ---------------------------------------------------------------- 桥
-
-export interface NowPlayingReport {
-  trackId: string
-  name: string
-  artists: string[]
-  album: string
-  provider: string
-  positionSec: number
-  durationSec: number
-  playing: boolean
-}
-
-export interface BridgeCommand {
-  type: 'play' | 'pause' | 'resume' | 'next' | 'prev'
-  track?: Track
-}
 
 export async function bridgeReport(report: NowPlayingReport): Promise<void> {
   await fetch(`${BASE}/bridge/report`, {

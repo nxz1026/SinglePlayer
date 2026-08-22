@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dataDir } from './auth.ts'
-import type { Track } from '../providers/types.ts'
+import { trackKey, type Track } from '../providers/types.ts'
 
 export interface LibraryList {
   id: string
@@ -71,10 +71,6 @@ function save(): void {
   try {
     writeFileSync(file(), JSON.stringify(cache, null, 2), 'utf8')
   } catch { /* 尽力而为 */ }
-}
-
-export function trackKey(track: Pick<Track, 'provider' | 'songId'>): string {
-  return `${track.provider}:${track.songId}`
 }
 
 export function getLists(): LibraryList[] {

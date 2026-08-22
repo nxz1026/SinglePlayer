@@ -5,15 +5,11 @@
 
 import { useSyncExternalStore } from 'react'
 import { api, audioProxyUrl, bridgePoll, bridgeReport } from './api.ts'
-import type { NowPlayingReport } from './api.ts'
+import type { NowPlayingReport } from '../providers/types.ts'
 import type { LyricPayload, Track } from '../providers/types.ts'
+import { parseLyricText } from '../lyric/parse.ts'
 
 export type PlayMode = 'order' | 'repeat' | 'one' | 'random'
-
-export interface LyricLine {
-  t: number
-  text: string
-}
 
 export interface PlayerState {
   queue: Track[]
@@ -124,27 +120,16 @@ export function jumpToNext(): void {
   jumpTo(nextIndex)
 }
 
-/** 简易 LRC 行解析（完整逐字解析在 M4）。 */
-function parseLrcLines(text: string): LyricLine[] {
-  const lines: LyricLine[] = []
-  for (const line of text.split('\n')) {
-    let match: RegExpExecArray | null
-    const tag = /\[(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?\]/g
-    const stamps: number[] = []
-    while ((match = tag.exec(line)) !== null) {
-      stamps.push(Number(match[1]) * 60 + Number(match[2]) + Number(`0.${match[3] ?? '0'}`))
-    }
-    const textPart = line.replace(/\[[^\]]*\]/g, '').trim()
-    if (textPart) {
-      for (const t of stamps) lines.push({ t, text: textPart })
-    }
-  }
-  return lines.sort((a, b) => a.t - b.t)
-}
+let cachedLrcText = ''
+let cachedLines: { t: number; text: string }[] = []
 
-export function currentLyricLines(): LyricLine[] {
+export function currentLyricLines(): { t: number; text: string }[] {
   const source = state.lyric.lrc || ''
-  return parseLrcLines(source)
+  if (source !== cachedLrcText) {
+    cachedLrcText = source
+    cachedLines = parseLyricText(source)
+  }
+  return cachedLines
 }
 
 // ---------------------- 播放解析（音源回退，骨架移植自 Mineradio provider-fallback）----------------------
@@ -386,7 +371,6 @@ export function removeFromQueue(index: number): void {
   const queue = state.queue.filter((_, i) => i !== index)
   if (wasCurrent) {
     stop()
-    set({ queue, index: -1 })
     if (index < queue.length && queue.length > 0) jumpTo(Math.min(index, queue.length - 1))
     else set({ queue, index: -1 })
     return
