@@ -216,3 +216,41 @@ export async function likeCheck(songId: string): Promise<{ liked: boolean }> {
     return { liked: false }
   }
 }
+
+/** 已登录用户的红心歌曲全量（未登录返回空）。 */
+export async function likedTracks(max = 300): Promise<Track[]> {
+  const cookie = loadAuth().neteaseCookie
+  if (!cookie) return []
+  try {
+    const account = await invoke<NcmResult>(lib.user_account, { cookie })
+    const uid = String(account.body?.account?.id ?? '')
+    if (!uid) return []
+    const likes = await invoke<NcmResult>(lib.likelist, { uid, cookie })
+    const rawIds: unknown = likes.body?.ids ?? likes.body?.chunk?.slice?.(-1)?.[0]?.ids
+    const ids: string[] = Array.isArray(rawIds) ? rawIds.map(String) : []
+    const out: Track[] = []
+    for (let i = 0; i < Math.min(ids.length, max); i += 50) {
+      const chunk = ids.slice(i, i + 50)
+      const detail = await invoke<NcmResult>(lib.song_detail, { ids: chunk.join(','), cookie })
+      const songs: AnyRecord[] = Array.isArray(detail.body?.songs) ? detail.body.songs : []
+      for (const song of songs) {
+        const track = mapTrack(song)
+        if (track) out.push(track)
+      }
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+/** 匿名可用的热歌榜（网易云「热歌榜」id 3778678），用于随机填充。 */
+export async function chartTracks(limit = 60): Promise<Track[]> {
+  try {
+    const r = await invoke<NcmResult>(lib.playlist_track_all, { id: '3778678', limit, timestamp: Date.now() })
+    const songs: AnyRecord[] = Array.isArray(r.body?.songs) ? r.body.songs : []
+    return songs.map(song => mapTrack(song)).filter((t): t is Track => !!t)
+  } catch {
+    return []
+  }
+}

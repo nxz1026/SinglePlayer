@@ -267,7 +267,26 @@ function commitPlay(track: Track, url: string): void {
   audio.src = audioProxyUrl(url)
   audio.play().catch(() => set({ error: '浏览器阻止了自动播放，请再点一次' }))
   set({ loadingUrl: false })
+  api.recordPlay(track)
   void loadLyric(track.id)
+}
+
+/** 随便听听：服务端合成曲库+红心 Top30 与 6 首随机的混合列表，一键替换队列并开播。 */
+export async function startRandomMix(): Promise<number> {
+  set({ note: '正在生成随机歌单…', error: '' })
+  try {
+    const { tracks } = await api.shuffleMix()
+    if (!tracks.length) {
+      set({ note: '' })
+      return 0
+    }
+    set({ queue: [...tracks], index: -1 })
+    jumpTo(0)
+    return tracks.length
+  } catch (error) {
+    set({ note: '', error: error instanceof Error ? error.message : String(error) })
+    return 0
+  }
 }
 
 function friendlyReason(reason: string, track: Track): string {

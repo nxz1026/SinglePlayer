@@ -10,6 +10,7 @@ import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
 import { drainCommands, nowPlayingSnapshot, pushCommand, reportNowPlaying } from './bridge.ts'
 import { getHaloSync } from './halo/sync.ts'
+import { addTrack, createList, deleteList, getLists, getStats, recordPlay, removeTrack, trackKey } from './store/library.ts'
 import type { BridgeCommand, NowPlayingReport } from './bridge.ts'
 import type { ProviderId, Quality } from './providers/types.ts'
 import { loadAuth, saveAuth } from './store/auth.ts'
@@ -209,6 +210,38 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       return { queued: pushCommand(command) }
     }),
 
+    // ---- 随便听听：曲库+红心 Top30 混入 6 首随机，打乱返回 ----
+    get(`${API_PREFIX}/shuffle-mix`, async () => ({ tracks: await buildShuffleMix() })),
+
+    // ---- 本地曲库（多列表）与播放统计 ----
+    get(`${API_PREFIX}/lists`, async () => ({
+      lists: getLists(),
+      recent: getStats().recent,
+      plays: getStats().plays,
+    })),
+    post(`${API_PREFIX}/list/create`, async body => {
+      const list = createList(String(body.name ?? ''))
+      return { list }
+    }),
+    post(`${API_PREFIX}/list/delete`, async body => {
+      return { deleted: deleteList(String(body.id ?? '')) }
+    }),
+    post(`${API_PREFIX}/list/add`, async body => {
+      const track = body.track as import('./providers/types.ts').Track | undefined
+      const result = track ? addTrack(String(body.id ?? ''), track) : undefined
+      if (result === undefined) throw new Error('列表不存在')
+      return { added: result === 'added' }
+    }),
+    post(`${API_PREFIX}/list/remove`, async body => {
+      return { removed: removeTrack(String(body.id ?? ''), String(body.trackId ?? '')) }
+    }),
+    post(`${API_PREFIX}/stats/play`, async body => {
+      const track = body.track as import('./providers/types.ts').Track | undefined
+      if (!track?.provider || !track.songId) throw new Error('bad track')
+      recordPlay(track)
+      return {}
+    }),
+
     // ---- 花再（HALO PIXELBAR）同步 ----
     get(`${API_PREFIX}/halo/status`, async () => ({ halo: getHaloSync().status() })),
     post(`${API_PREFIX}/halo/config`, async body => {
@@ -267,6 +300,58 @@ function normalizeCommand(body: Record<string, unknown>): BridgeCommand | undefi
   const type = String(body.type ?? '')
   if (type === 'pause' || type === 'resume' || type === 'next' || type === 'prev') return { type }
   return undefined
+}
+
+function shuffleInPlace<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[items[i], items[j]] = [items[j] as T, items[i] as T]
+  }
+  return items
+}
+
+/**
+ * 随便听听：本地曲库 + 网易红心（已登录）合并去重 →
+ * 按播放次数取 Top30 → 混入 6 首「纯随机」（剩余池优先，不足从热歌榜补）→ 整体打乱。
+ */
+async function buildShuffleMix(): Promise<import('./providers/types.ts').Track[]> {
+  const seen = new Set<string>()
+  const pool: import('./providers/types.ts').Track[] = []
+  const pushUnique = (track?: import('./providers/types.ts').Track): void => {
+    if (!track) return
+    const key = trackKey(track)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    pool.push(track)
+  }
+
+  for (const list of getLists()) for (const track of list.tracks) pushUnique(track)
+  try {
+    for (const track of await netease.likedTracks(300)) pushUnique(track)
+  } catch { /* 未登录/网络失败则跳过 */ }
+
+  const stats = getStats()
+  const scoreOf = (track: import('./providers/types.ts').Track): number =>
+    stats.plays[trackKey(track)]?.count ?? 0
+  const ranked = [...pool].sort((a, b) => scoreOf(b) - scoreOf(a))
+
+  const top = ranked.slice(0, 30)
+  const restPool = shuffleInPlace(ranked.slice(30))
+  const extras = restPool.slice(0, 6)
+
+  if (extras.length < 6) {
+    try {
+      const chart = shuffleInPlace(await netease.chartTracks(60))
+      for (const track of chart) {
+        if (extras.length >= 6) break
+        if (seen.has(trackKey(track))) continue
+        seen.add(trackKey(track))
+        extras.push(track)
+      }
+    } catch { /* 榜单尽力而为 */ }
+  }
+
+  return shuffleInPlace([...top, ...extras])
 }
 
 /** 工具层读取正在播放快照。 */

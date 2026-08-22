@@ -71,6 +71,16 @@ export const api = {
   haloSetConfig(config: Record<string, unknown>): Promise<{ config: Record<string, unknown> }> {
     return post('/halo/config', { config })
   },
+  shuffleMix(): Promise<{ tracks: Track[] }> {
+    return get('/shuffle-mix')
+  },
+  recordPlay(track: Track): void {
+    void fetch(`${BASE}/stats/play`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ track }),
+    }).catch(() => {})
+  },
 }
 
 export interface HaloStatus {

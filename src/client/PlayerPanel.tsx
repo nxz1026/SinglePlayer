@@ -22,6 +22,7 @@ import {
   seek,
   setQualityPref,
   setVolume,
+  startRandomMix,
   toggle,
   usePlayer,
 } from './player.ts'
@@ -432,6 +433,12 @@ function NowPlaying(): React.ReactElement | null {
       {error && <div className="dshm-err">{error}</div>}
       {!error && note && <div className="dshm-note dshm-note-ok">{note}</div>}
       <div className="dshm-controls">
+        <button
+          type="button"
+          className="dshm-icon"
+          title="随便听听：曲库+红心 Top30 混入随机新歌"
+          onClick={() => { void startRandomMix() }}
+        >🎲</button>
         <button type="button" className="dshm-icon" onClick={cycleMode} title="播放模式">{MODE_LABEL[mode]}</button>
         <button type="button" className="dshm-icon" onClick={prev}>⏮</button>
         <button type="button" className="dshm-playbtn" onClick={toggle}>{playing ? '⏸' : '▶'}</button>
