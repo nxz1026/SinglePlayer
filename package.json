@@ -34,6 +34,9 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "NeteaseCloudMusicApi": "^4.32.0"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0-rc.8"
   },
@@ -53,6 +56,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
+    "tsx": "^4.23.12",
     "typescript": "^5.6.0"
   }
 }
