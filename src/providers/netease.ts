@@ -130,14 +130,14 @@ function collectCookie(r: NcmResult): string {
 
 /**
  * 轮询扫码状态：800 过期 / 801 等待 / 802 已扫 / 803 成功。
- * 803 时持久化 Cookie 并回带昵称。
+ * 803 且尚未拿到 Cookie 时重试一次以捕获 Set-Cookie。
  */
 export async function qrCheck(key: string): Promise<
   { code: 800 | 801 | 802 | 803; message: string; nickname?: string; avatar?: string }
 > {
   let r = await invoke<NcmResult>(lib.login_qr_check, { key, noCookie: true, timestamp: Date.now() })
   let code = Number(r.body?.code ?? 0)
-  if (code === 803) {
+  if (code === 803 && !collectCookie(r)) {
     // noCookie 模式下部分部署不回 set-cookie，重试一次拿 Cookie。
     const retry = await invoke<NcmResult>(lib.login_qr_check, { key, timestamp: Date.now() })
     const retryCookie = collectCookie(retry)

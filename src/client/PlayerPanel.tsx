@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api.ts'
 import { Karaoke } from './Karaoke.tsx'
+import { startQrLogin, useQrLogin } from './qrLogin.ts'
 import {
   addToQueue,
   clearQueue,
@@ -179,10 +180,9 @@ interface AuthItem {
 
 function AuthTab(): React.ReactElement {
   const [items, setItems] = useState<AuthItem[]>([])
-  const [qr, setQr] = useState<{ key: string; img: string } | null>(null)
-  const [qrMessage, setQrMessage] = useState('')
   const [qqCookieText, setQqCookieText] = useState('')
   const [note, setNote] = useState('')
+  const qrLogin = useQrLogin()
 
   const refresh = useCallback(() => {
     void api.authStatus().then(({ providers }) => setItems(providers)).catch(() => {})
@@ -190,26 +190,13 @@ function AuthTab(): React.ReactElement {
 
   useEffect(refresh, [refresh])
 
+  // 登录成功后刷新账号状态
   useEffect(() => {
-    if (!qr) return
-    let alive = true
-    const timer = setInterval(() => {
-      void api.neteaseQrCheck(qr.key).then(({ qr: result }) => {
-        if (!alive) return
-        if (result.code === 801) setQrMessage('等待扫码…')
-        else if (result.code === 802) setQrMessage('已扫码，请在手机上确认')
-        else if (result.code === 803) {
-          setQrMessage(`登录成功：${result.nickname ?? ''}`)
-          setQr(null)
-          refresh()
-        } else if (result.code === 800) {
-          setQrMessage('二维码已过期')
-          clearInterval(timer)
-        }
-      }).catch(() => {})
-    }, 2000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [qr, refresh])
+    if (qrLogin.phase === 'success') {
+      refresh()
+      setNote('')
+    }
+  }, [qrLogin.phase, refresh])
 
   return (
     <div className="dshm-auth">
@@ -218,18 +205,20 @@ function AuthTab(): React.ReactElement {
           网易云音乐
           <StatusChip item={items.find(i => i.provider === 'netease')} />
         </div>
-        {qr === null
+        {qrLogin.phase === 'idle' || qrLogin.phase === 'given-up'
           ? (
-              <button type="button" className="dshm-btn" onClick={() => {
-                void api.neteaseQrStart().then(({ key }) =>
-                  api.neteaseQrCreate(key).then(({ img }) => { setQr({ key, img }); setQrMessage('等待扫码…') }))
-                  .catch(cause => setNote(String(cause)))
-              }}>扫码登录</button>
+              <button type="button" className="dshm-btn" onClick={startQrLogin}>扫码登录</button>
             )
           : (
               <div className="dshm-qr">
-                <img src={qr.img} alt="网易云登录二维码" width={148} height={148} />
-                <div className="dshm-note">{qrMessage}</div>
+                {qrLogin.img && <img src={qrLogin.img} alt="网易云登录二维码" width={148} height={148} />}
+                <div className="dshm-note">
+                  {qrLogin.phase === 'waiting' && '请用网易云音乐 App 扫码'}
+                  {qrLogin.phase === 'scanned' && '已扫码，请在手机上确认'}
+                  {qrLogin.phase === 'starting' && '正在获取二维码…'}
+                  {qrLogin.phase === 'success' && `登录成功：${qrLogin.nickname ?? ''}`}
+                  {qrLogin.note && <><br />{qrLogin.note}</>}
+                </div>
               </div>
             )}
       </div>
