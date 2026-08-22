@@ -106,6 +106,8 @@ export const CSS = `
 .dshm-file-hidden { display:none; }
 .dshm-sec-head { display:flex; align-items:center; gap:6px; }
 .dshm-alarm-list { display:flex; flex-direction:column; gap:2px; }
+.dshm-alarm-form { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; color:#9aa3c7; }
+.dshm-time { width:96px; }
 .dshm-alarm-row { display:flex; align-items:center; gap:8px; font-size:12px; padding:2px 0; }
 .dshm-alarm-time { color:#8be9fd; font-weight:600; min-width:38px; }
 .dshm-alarm-kw { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#cdd4f5; }

@@ -134,12 +134,19 @@ function SettingsView(): React.ReactElement {
   const [settings, setSettings] = useState<import('./api.ts').PluginSettings | null>(null)
   const [schedule, setSchedule] = useState<import('./api.ts').ScheduleStatus | null>(null)
   const [savedNote, setSavedNote] = useState('')
+  const [alarmTime, setAlarmTime] = useState('07:30')
+  const [alarmKeyword, setAlarmKeyword] = useState('')
+  const [alarmLabel, setAlarmLabel] = useState('')
+  const [sleepMinutes, setSleepMinutes] = useState(30)
 
   useEffect(() => {
     void api.haloStatus().then(({ halo }) => setHalo(halo)).catch(() => {})
     void api.getPluginSettings().then(({ settings }) => setSettings(settings)).catch(() => {})
-    void api.scheduleStatus().then(setSchedule).catch(() => {})
+    void refreshSchedule()
   }, [])
+
+  const refreshSchedule = useCallback(() =>
+    api.scheduleStatus().then(setSchedule).catch(() => {}), [])
 
   const patchHalo = useCallback((patch: Record<string, unknown>) => {
     // 保存后重新拉取完整 status：顶层 enabled / connected 才会同步更新
@@ -162,12 +169,33 @@ function SettingsView(): React.ReactElement {
     }).catch(cause => setSavedNote(cause instanceof Error ? cause.message : String(cause)))
   }, [])
 
-  const dropAlarm = useCallback((id: string) => {
-    void api.alarmRemove(id)
-      .then(() => api.scheduleStatus())
-      .then(setSchedule)
-      .catch(() => {})
+  const noteError = useCallback((cause: unknown) => {
+    setSavedNote(cause instanceof Error ? cause.message : String(cause))
+    window.setTimeout(() => setSavedNote(''), 2500)
   }, [])
+
+  const addAlarm = useCallback(() => {
+    const kw = alarmKeyword.trim()
+    if (!kw) return
+    void api.alarmAdd(alarmTime, kw, alarmLabel.trim() || undefined)
+      .then(refreshSchedule)
+      .then(() => { setAlarmKeyword(''); setAlarmLabel('') })
+      .catch(noteError)
+  }, [alarmTime, alarmKeyword, alarmLabel, refreshSchedule, noteError])
+
+  const startSleep = useCallback(() => {
+    void api.sleepSet(Math.min(720, Math.max(1, Math.round(sleepMinutes))))
+      .then(refreshSchedule)
+      .catch(noteError)
+  }, [sleepMinutes, refreshSchedule, noteError])
+
+  const stopSleep = useCallback(() => {
+    void api.sleepClear().then(refreshSchedule).catch(() => {})
+  }, [refreshSchedule])
+
+  const dropAlarm = useCallback((id: string) => {
+    void api.alarmRemove(id).then(refreshSchedule).catch(() => {})
+  }, [refreshSchedule])
 
   const config = halo?.config
 
@@ -224,21 +252,69 @@ function SettingsView(): React.ReactElement {
         />
         反向推送（切歌写入会话动态）
       </label>
-      {schedule && schedule.sleepRemainingSec > 0 && (
-        <div className="dshm-note">
-          睡眠定时：还剩 {Math.ceil(schedule.sleepRemainingSec / 60)} 分钟自动暂停
-        </div>
-      )}
-      {schedule && schedule.alarms.length > 0 && (
-        <div className="dshm-alarm-list">
-          {schedule.alarms.map(alarm => (
-            <div key={alarm.id} className="dshm-alarm-row">
-              <span className="dshm-alarm-time">{alarm.time}</span>
-              <span className="dshm-alarm-kw">{alarm.label || alarm.keyword}</span>
-              <button type="button" className="dshm-icon" title="删除闹钟" onClick={() => dropAlarm(alarm.id)}>✕</button>
+      {settings?.schedulerEnabled === false ? (
+        <div className="dshm-note">定时任务已关闭：闹钟与睡眠定时不会触发</div>
+      ) : (
+        <>
+          <div className="dshm-set-title">
+            音乐闹钟
+            <span className="dshm-set-state">{schedule ? `${schedule.alarms.length} 个` : ''}</span>
+          </div>
+          <div className="dshm-alarm-form">
+            <input
+              className="dshm-num dshm-time"
+              type="time"
+              value={alarmTime}
+              onChange={event => setAlarmTime(event.target.value)}
+            />
+            <input
+              className="dshm-input dshm-input-sm"
+              placeholder="到点播放的歌…"
+              value={alarmKeyword}
+              onChange={event => setAlarmKeyword(event.target.value)}
+              onKeyDown={event => { if (event.key === 'Enter') addAlarm() }}
+            />
+            <button type="button" className="dshm-mini" onClick={addAlarm}>＋添加</button>
+          </div>
+          <input
+            className="dshm-input dshm-input-sm"
+            placeholder="备注（可选），如 起床闹钟"
+            value={alarmLabel}
+            onChange={event => setAlarmLabel(event.target.value)}
+          />
+          {schedule && schedule.alarms.length > 0 && (
+            <div className="dshm-alarm-list">
+              {schedule.alarms.map(alarm => (
+                <div key={alarm.id} className="dshm-alarm-row">
+                  <span className="dshm-alarm-time">{alarm.time}</span>
+                  <span className="dshm-alarm-kw">{alarm.label || alarm.keyword}</span>
+                  <button type="button" className="dshm-icon" title="删除闹钟" onClick={() => dropAlarm(alarm.id)}>✕</button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+          <div className="dshm-set-title">睡眠定时</div>
+          {schedule && schedule.sleepRemainingSec > 0 && (
+            <div className="dshm-note">
+              已启动：还剩 {Math.ceil(schedule.sleepRemainingSec / 60)} 分钟自动暂停
+            </div>
+          )}
+          <div className="dshm-alarm-form">
+            <input
+              className="dshm-num"
+              type="number"
+              min={1}
+              max={720}
+              value={sleepMinutes}
+              onChange={event => setSleepMinutes(Number(event.target.value) || 30)}
+            />
+            <span>分钟后暂停</span>
+            <button type="button" className="dshm-mini" onClick={startSleep}>开始</button>
+            {schedule && schedule.sleepRemainingSec > 0 && (
+              <button type="button" className="dshm-mini" onClick={stopSleep}>取消</button>
+            )}
+          </div>
+        </>
       )}
 
       <div className="dshm-set-title">

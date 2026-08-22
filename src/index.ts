@@ -15,8 +15,8 @@ import { startScheduler } from './scheduler.ts'
 /** 稳定插件名（对应 cordis.patch.yml 的 insert id）。 */
 export const name = 'music'
 
-/** 宿主半依赖的服务。 */
-export const inject = ['webServer', 'tools'] as const
+/** 宿主半依赖的服务（agents：反向推送写会话通知用）。 */
+export const inject = ['webServer', 'tools', 'agents'] as const
 
 /** 插件配置。 */
 export interface Config {}
