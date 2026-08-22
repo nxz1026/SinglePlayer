@@ -13,19 +13,30 @@ import {
   currentLyricLines,
   currentTrack,
   getPlayerState,
+  getQualityPref,
   next,
   playAll,
   playTrack,
   prev,
   removeFromQueue,
   seek,
+  setQualityPref,
   setVolume,
   toggle,
   usePlayer,
 } from './player.ts'
 import type { Track } from '../providers/types.ts'
 
-const MODE_LABEL: Record<string, string> = { order: '顺序', repeat: '列表循环', one: '单曲循环' }
+const REPO_URL = 'https://github.com/nxz1026/SinglePlayer'
+
+const MODE_LABEL: Record<string, string> = { order: '顺序', repeat: '循环', one: '单曲', random: '随机' }
+
+const QUALITY_LABEL: Record<string, string> = {
+  standard: '标准 128k',
+  exhigh: '较高 320k',
+  lossless: '无损 FLAC',
+  hires: 'Hi-Res',
+}
 
 function fmt(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00'
@@ -33,8 +44,8 @@ function fmt(seconds: number): string {
   const s = Math.floor(seconds % 60)
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
-
-export function Surface({ open, onClose }: { open: boolean; onClose: () => void }): React.ReactElement | null {  const [tab, setTab] = useState<'search' | 'queue' | 'auth'>('search')
+export function Surface({ open, onClose }: { open: boolean; onClose: () => void }): React.ReactElement | null {
+  const [tab, setTab] = useState<'search' | 'queue' | 'auth' | 'settings'>('search')
   if (!open) return null
   return (
     <div className="dshm-panel">
@@ -42,21 +53,136 @@ export function Surface({ open, onClose }: { open: boolean; onClose: () => void 
       <div className="dshm-head">
         <span className="dshm-logo">♪</span>
         <span className="dshm-title">单身汉播放器</span>
+        <a className="dshm-gh" href={REPO_URL} target="_blank" rel="noreferrer" title="GitHub 仓库" aria-label="GitHub 仓库">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+          </svg>
+        </a>
+        <button
+          type="button"
+          className={tab === 'settings' ? 'dshm-x dshm-gear-on' : 'dshm-x'}
+          title="设置"
+          aria-label="设置"
+          onClick={() => setTab(value => (value === 'settings' ? 'search' : 'settings'))}
+        >⚙</button>
         <button type="button" className="dshm-x" onClick={onClose} aria-label="关闭">×</button>
       </div>
-      <div className="dshm-tabs">
-        <button type="button" className={tab === 'search' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('search')}>搜索</button>
-        <button type="button" className={tab === 'queue' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('queue')}>
-          队列{getPlayerState().queue.length > 0 ? `(${getPlayerState().queue.length})` : ''}
-        </button>
-        <button type="button" className={tab === 'auth' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('auth')}>账号</button>
-      </div>
+      {tab !== 'settings' && (
+        <div className="dshm-tabs">
+          <button type="button" className={tab === 'search' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('search')}>搜索</button>
+          <button type="button" className={tab === 'queue' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('queue')}>
+            队列{getPlayerState().queue.length > 0 ? `(${getPlayerState().queue.length})` : ''}
+          </button>
+          <button type="button" className={tab === 'auth' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('auth')}>账号</button>
+        </div>
+      )}
       <div className="dshm-body">
         {tab === 'search' && <SearchTab />}
         {tab === 'queue' && <QueueTab />}
         {tab === 'auth' && <AuthTab />}
+        {tab === 'settings' && <SettingsView />}
       </div>
       <NowPlaying />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- 设置
+
+function SettingsView(): React.ReactElement {
+  const [quality, setQuality] = useState(getQualityPref())
+  const [halo, setHalo] = useState<import('./api.ts').HaloStatus | null>(null)
+  const [savedNote, setSavedNote] = useState('')
+
+  useEffect(() => {
+    void api.haloStatus().then(({ halo }) => setHalo(halo)).catch(() => {})
+  }, [])
+
+  const patchHalo = useCallback((patch: Record<string, unknown>) => {
+    void api.haloSetConfig(patch).then(({ config }) => {
+      setHalo(previous => previous ? { ...previous, config: config as import('./api.ts').HaloStatus['config'] } : previous)
+      setSavedNote('已保存')
+      window.setTimeout(() => setSavedNote(''), 1500)
+    }).catch(cause => setSavedNote(cause instanceof Error ? cause.message : String(cause)))
+  }, [])
+
+  const config = halo?.config
+
+  return (
+    <div className="dshm-settings">
+      <div className="dshm-set-title">音质偏好</div>
+      <select
+        className="dshm-select"
+        value={quality}
+        onChange={event => {
+          setQuality(event.target.value)
+          setQualityPref(event.target.value)
+          setSavedNote('下次播放生效')
+          window.setTimeout(() => setSavedNote(''), 1500)
+        }}
+      >
+        {Object.entries(QUALITY_LABEL).map(([value, label]) => (
+          <option key={value} value={value}>{label}</option>
+        ))}
+      </select>
+
+      <div className="dshm-set-title">
+        花再音箱（HALO PixelBar）
+        <span className="dshm-set-state">{halo ? (halo.connected ? '已连接' : '未连接') : ''}</span>
+      </div>
+      <label className="dshm-check-row">
+        <input
+          type="checkbox"
+          checked={halo?.enabled ?? false}
+          disabled={!halo}
+          onChange={event => patchHalo({ enabled: event.target.checked })}
+        />
+        启用歌词同步
+      </label>
+      <label className="dshm-check-row">
+        <input
+          type="checkbox"
+          checked={config?.dynamicScroll ?? false}
+          disabled={!halo}
+          onChange={event => patchHalo({ dynamicScroll: event.target.checked })}
+        />
+        动态滚动歌词（长句右→左）
+      </label>
+      <label className="dshm-check-row">
+        <input
+          type="checkbox"
+          checked={config?.idleClockWhenPaused ?? true}
+          disabled={!halo}
+          onChange={event => patchHalo({ idleClockWhenPaused: event.target.checked })}
+        />
+        暂停时显示时钟
+      </label>
+      <label className="dshm-set-row">
+        歌词对齐
+        <select
+          className="dshm-select"
+          value={config?.align ?? 'center'}
+          disabled={!halo}
+          onChange={event => patchHalo({ align: event.target.value })}
+        >
+          <option value="left">左</option>
+          <option value="center">中</option>
+          <option value="right">右</option>
+        </select>
+      </label>
+      <label className="dshm-set-row">
+        每行字数
+        <input
+          className="dshm-num"
+          type="number"
+          min={10}
+          max={40}
+          value={config?.maxCharsPerLine ?? 32}
+          disabled={!halo}
+          onChange={event => patchHalo({ maxCharsPerLine: Number(event.target.value) || 32 })}
+        />
+      </label>
+      {savedNote && <div className="dshm-note dshm-note-ok">{savedNote}</div>}
     </div>
   )
 }
@@ -396,4 +522,18 @@ const CSS = `
 .dshm-textarea { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:10px; color:#cdd4f5; padding:8px; font-size:11px; resize:vertical; outline:none; }
 .dshm-textarea:focus { border-color:#31c27c; }
 .dshm-btn { align-self:flex-start; border:none; border-radius:9px; padding:7px 16px; background:linear-gradient(135deg,#7c5cff,#38bdf8); color:#fff; cursor:pointer; font-size:12.5px; }
+.dshm-gh { display:flex; align-items:center; color:#9aa3c7; }
+.dshm-gh:hover { color:#fff; }
+.dshm-gear-on { color:#7c5cff !important; transform:rotate(45deg); }
+.dshm-x { transition:transform .15s ease, color .15s ease; }
+.dshm-settings { display:flex; flex-direction:column; gap:10px; padding-bottom:6px; }
+.dshm-set-title { font-weight:700; font-size:12.5px; display:flex; align-items:center; gap:8px; margin-top:4px; }
+.dshm-set-state { font-weight:400; font-size:11px; color:#9aa3c7; }
+.dshm-select { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14); border-radius:8px; color:#eef1ff; padding:5px 8px; font-size:12px; outline:none; }
+.dshm-select option { color:#111; }
+.dshm-num { width:70px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14); border-radius:8px; color:#eef1ff; padding:5px 8px; font-size:12px; outline:none; }
+.dshm-check-row { display:flex; align-items:center; gap:8px; font-size:12.5px; cursor:pointer; }
+.dshm-check-row input { accent-color:#7c5cff; }
+.dshm-set-row { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12.5px; }
+.dshm-note-ok { color:#6ee7a8; }
 `

@@ -63,6 +63,27 @@ export const api = {
   neteaseLikeCheck(songId: string): Promise<{ liked: boolean }> {
     return get(`/like/check?id=${encodeURIComponent(`netease:${songId}`)}`)
   },
+  haloStatus(): Promise<{ halo: HaloStatus }> {
+    return get('/halo/status')
+  },
+  haloSetConfig(config: Record<string, unknown>): Promise<{ config: Record<string, unknown> }> {
+    return post('/halo/config', { config })
+  },
+}
+
+export interface HaloStatus {
+  enabled: boolean
+  connected: boolean
+  simulated: boolean
+  playing: boolean
+  devices: number
+  config?: {
+    align?: string
+    dynamicScroll?: boolean
+    idleClockWhenPaused?: boolean
+    maxCharsPerLine?: number
+    screenColor?: { r: number; g: number; b: number }
+  }
 }
 
 /** 经宿主代理的音频地址。 */

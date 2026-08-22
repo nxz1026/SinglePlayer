@@ -8,7 +8,7 @@ import { api, audioProxyUrl, bridgePoll, bridgeReport } from './api.ts'
 import type { NowPlayingReport } from './api.ts'
 import type { LyricPayload, Track } from '../providers/types.ts'
 
-export type PlayMode = 'order' | 'repeat' | 'one'
+export type PlayMode = 'order' | 'repeat' | 'one' | 'random'
 
 export interface LyricLine {
   t: number
@@ -23,6 +23,7 @@ export interface PlayerState {
   duration: number
   loadingUrl: boolean
   error: string
+  note: string
   volume: number
   mode: PlayMode
   lyric: LyricPayload
@@ -36,6 +37,7 @@ const initial: PlayerState = {
   duration: 0,
   loadingUrl: false,
   error: '',
+  note: '',
   volume: readVolume(),
   mode: readMode(),
   lyric: { lrc: '', tlyric: '', yrc: '', roma: '' },
@@ -73,7 +75,7 @@ function readVolume(): number {
 
 function readMode(): PlayMode {
   const raw = localStorage.getItem('dshm-mode')
-  return raw === 'repeat' || raw === 'one' ? raw : 'order'
+  return raw === 'repeat' || raw === 'one' || raw === 'random' ? raw : 'order'
 }
 
 // ---------------------------------------------------------------- audio
@@ -96,10 +98,24 @@ function onEnded(): void {
     void audio.play().catch(() => {})
     return
   }
+  jumpToNext()
+}
+
+/** 随机模式取一个不同于当前的索引；其余模式顺序推进。 */
+export function jumpToNext(): void {
+  const queue = state.queue
+  if (queue.length === 0) return
+  if (state.mode === 'random' && queue.length > 1) {
+    let index = state.index
+    while (index === state.index) {
+      index = Math.floor(Math.random() * queue.length)
+    }
+    jumpTo(index)
+    return
+  }
   const nextIndex = state.index + 1
-  const wrap = state.mode === 'repeat'
-  if (nextIndex >= state.queue.length) {
-    if (wrap) jumpTo(0)
+  if (nextIndex >= queue.length) {
+    if (state.mode === 'repeat') jumpTo(0)
     else set({ playing: false })
     return
   }
@@ -132,12 +148,23 @@ export function currentLyricLines(): LyricLine[] {
 async function resolveAndPlay(track: Track): Promise<void> {
   set({ loadingUrl: true, error: '', currentTime: 0, duration: track.durationMs / 1000 })
   try {
-    const result = await api.songUrl(track.id, 'exhigh', track.mediaMid)
+    const quality = getQualityPref()
+    const result = await api.songUrl(track.id, quality, track.mediaMid)
     if (!result.url) {
-      set({ loadingUrl: false, error: result.reason ?? '无法获取播放地址' })
+      // 跨平台音源回退：当前平台取流失败时，尝试另一平台的同名曲目。
+      const fallback = await findFallback(track, quality)
+      if (fallback) {
+        set({ loadingUrl: false, error: '', note: `已切换音源（${fallback.provider}）` })
+        replaceCurrent(fallback)
+        return
+      }
+      const friendly = /VIP|未登录/.test(result.reason ?? '')
+        ? 'VIP 曲目：请在「账号」页登录后播放'
+        : result.reason ?? '无法获取播放地址'
+      set({ loadingUrl: false, error: friendly })
       return
     }
-    if (result.vipRequired) set({ error: '' })
+    set({ note: '' })
     currentTrackId = track.id
     audio.src = audioProxyUrl(result.url)
     audio.play().catch(() => set({ error: '浏览器阻止了自动播放，请再点一次' }))
@@ -146,6 +173,33 @@ async function resolveAndPlay(track: Track): Promise<void> {
   } catch (error) {
     set({ loadingUrl: false, error: error instanceof Error ? error.message : String(error) })
   }
+}
+
+/** 在另一平台搜索同名歌曲并验证可播，返回第一个可用的候选。 */
+async function findFallback(track: Track, quality: string): Promise<Track | undefined> {
+  const other = track.provider === 'qq' ? 'netease' : 'qq'
+  try {
+    const { tracks } = await api.search(`${track.name} ${track.artists[0] ?? ''}`.trim(), 8)
+    const candidates = tracks.filter(item =>
+      item.provider === other && normalizeName(item.name) === normalizeName(track.name))
+    for (const candidate of candidates.slice(0, 2)) {
+      const probe = await api.songUrl(candidate.id, quality, candidate.mediaMid)
+      if (probe.url) return candidate
+    }
+  } catch { /* 回退尽力而为 */ }
+  return undefined
+}
+
+function normalizeName(name: string): string {
+  return name.replace(/[\s（）()【】\[\]-—_·.,，。!！?？'’"]+/g, '').toLowerCase()
+}
+
+/** 用回退曲目替换队列中的当前曲目并立即播放。 */
+function replaceCurrent(track: Track): void {
+  const queue = [...state.queue]
+  queue[state.index] = track
+  set({ queue })
+  jumpTo(state.index)
 }
 
 async function loadLyric(trackId: string): Promise<void> {
@@ -211,11 +265,20 @@ export function jumpTo(index: number): void {
 
 export function next(): void {
   if (state.queue.length === 0) return
-  jumpTo((state.index + 1) % state.queue.length)
+  jumpToNext()
 }
 
 export function prev(): void {
   if (state.queue.length === 0) return
+  // 随机模式下上一首也随机（简单实现，不做历史栈）。
+  if (state.mode === 'random' && state.queue.length > 1) {
+    let index = state.index
+    while (index === state.index) {
+      index = Math.floor(Math.random() * state.queue.length)
+    }
+    jumpTo(index)
+    return
+  }
   jumpTo((state.index - 1 + state.queue.length) % state.queue.length)
 }
 
@@ -247,10 +310,19 @@ export function setVolume(volume: number): void {
 }
 
 export function cycleMode(): void {
-  const order: PlayMode[] = ['order', 'repeat', 'one']
+  const order: PlayMode[] = ['order', 'repeat', 'one', 'random']
   const mode = order[(order.indexOf(state.mode) + 1) % order.length] ?? 'order'
   localStorage.setItem('dshm-mode', mode)
   set({ mode })
+}
+
+/** 音质偏好（设置面板可调，默认 exhigh）。 */
+export function getQualityPref(): string {
+  return localStorage.getItem('dshm-quality') ?? 'exhigh'
+}
+
+export function setQualityPref(quality: string): void {
+  localStorage.setItem('dshm-quality', quality)
 }
 
 export function currentTrack(): Track | undefined {

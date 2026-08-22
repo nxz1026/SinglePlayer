@@ -115,6 +115,7 @@ export class HaloSync {
       simulated: this.simulated,
       playing: this.playing,
       devices: this.listDevices().length,
+      config: this.getConfig(),
     }
   }
 

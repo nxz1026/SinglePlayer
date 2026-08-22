@@ -68,22 +68,45 @@ export async function search(keyword: string, limit = 12, offset = 0): Promise<T
   return songs.map(song => mapTrack(song as AnyRecord)).filter((t): t is Track => !!t)
 }
 
+/** 匿名/非 VIP 账号在高音质档常拿不到直链，逐级降档重试。 */
+const LEVEL_FALLBACK: Record<string, string[]> = {
+  jymaster: ['hires', 'lossless', 'exhigh', 'standard'],
+  hires: ['lossless', 'exhigh', 'standard'],
+  lossless: ['exhigh', 'standard'],
+  exhigh: ['standard'],
+  standard: [],
+}
+
 export async function songUrl(songId: string, quality: Quality = 'hires'): Promise<SongUrlResult> {
   const id = songId.replace(/\D/g, '')
   if (!id) return { url: '', reason: 'MISSING_ID' }
-  const result = await invoke<NcmResult>(lib.song_url_v1, {
-    id,
-    level: LEVELS[quality] ?? 'exhigh',
-    cookie: loadAuth().neteaseCookie || undefined,
-  })
-  const data: AnyRecord | undefined = result.body?.data?.[0]
-  const url = String(data?.url ?? '')
-  if (!url) {
-    return { url: '', vipRequired: true, reason: `NETEASE_URL_UNAVAILABLE(code=${String(result.body?.code ?? '?')})` }
+  const cookie = loadAuth().neteaseCookie || undefined
+  const requested = LEVELS[quality] ?? 'exhigh'
+  const levels = [requested, ...LEVEL_FALLBACK[requested] ?? []]
+  let lastBodyCode = '?'
+  for (const level of levels) {
+    const result = await invoke<NcmResult>(lib.song_url_v1, {
+      id,
+      level,
+      cookie,
+      timestamp: Date.now(),
+    })
+    const data: AnyRecord | undefined = result.body?.data?.[0]
+    lastBodyCode = String(result.body?.code ?? '?')
+    const url = String(data?.url ?? '')
+    if (!url) continue
+    return {
+      url,
+      quality: String(data?.level ?? level),
+      trial: data?.freeTrialInfo != null,
+      vipRequired: data?.freeTrialInfo != null,
+    }
   }
-  const trial = data?.freeTrialInfo != null
-  const level = String(data?.level ?? quality)
-  return { url, quality: level, trial, vipRequired: trial }
+  return {
+    url: '',
+    vipRequired: true,
+    reason: `NETEASE_URL_UNAVAILABLE(code=${lastBodyCode}，已尝试 ${levels.join('→')}）`,
+  }
 }
 
 export async function lyric(songId: string): Promise<LyricPayload> {
