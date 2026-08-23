@@ -11,7 +11,7 @@ import { getSettings } from './store/settings.ts'
 import { logInfo, logWarn } from './log.ts'
 import type { NowPlayingReport } from './providers/types.ts'
 
-const MIN_GAP_MS = 10_000
+const BURST_GAP_MS = 3_000
 
 interface AppendableSession {
   append?: (type: string, data: unknown, opts?: unknown) => unknown
@@ -23,6 +23,8 @@ interface AgentLike {
 }
 
 let lastAt = 0
+/** 已成功写入的曲目：换歌才写（避免 2s 上报重复刷屏）；失败允许重试。 */
+let lastWrittenTrackId = ''
 
 /** 取末条事件的时间戳（无事件退化为 createdAt），用于挑最近活跃会话。 */
 function activityOf(agent: AgentLike): number {
@@ -50,8 +52,9 @@ function pickTarget(pool: AgentLike[]): AgentLike | undefined {
 export function maybeReversePush(ctx: Context, report: NowPlayingReport, isNewTrack: boolean): void {
   if (!getSettings().reversePushEnabled) return
   if (!isNewTrack || !report.name) return
+  if (report.trackId === lastWrittenTrackId) return
   const now = Date.now()
-  if (now - lastAt < MIN_GAP_MS) return
+  if (now - lastAt < BURST_GAP_MS) return
   lastAt = now
 
   void (async (): Promise<void> => {
@@ -91,6 +94,7 @@ export function maybeReversePush(ctx: Context, report: NowPlayingReport, isNewTr
         },
       })
       target.session!.append!('user/message', message, { surfaceOp: 'append' })
+      lastWrittenTrackId = report.trackId
       logInfo(`[reverse] 已写入会话 ${String(target.id ?? '?')}：${text}`)
     } catch (cause) {
       logWarn(`[reverse] 写入失败: ${cause instanceof Error ? cause.message : String(cause)}`)
