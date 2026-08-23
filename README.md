@@ -39,6 +39,8 @@
 - **四种播放模式**：顺序 / 列表循环 / 单曲循环 / 随机
 - **跨平台音源回退**：取流失败自动降级音质 → 跨平台同名同歌手换源 → 队列跳歌（20s 预算 + token 防竞态，骨架移植自 Mineradio provider-fallback）
 - **设置面板**：音质偏好、「通知与定时」四开关、花再同步开关与显示参数（对齐/滚动/每行字数/暂停时钟）
+- **可插拔音源架构**：`MusicProvider` 合同 + `ProviderRegistry`（对标 HaloLyricSync factory.py）。新增平台只需在 `providers/<x>.ts` 实现合同、`installBuiltinProviders()` 注册一次，`routes/tools/merge` 自动适配，无需改动消费方
+- **用户侧音源管理**：设置面板「音乐源」分组可实时启停各平台（`GET /providers` + `POST /providers/toggle`），状态持久化；停用后聚合搜索仅走启用源
 - **不重复造轮子**：平台 API 层、卡拉OK算法、音源回退骨架均自 Mineradio 移植改造；插件机制完全复用 dsh Cordis 体系
 
 ## 安装
@@ -105,6 +107,8 @@ dsh plugin --profile web add <本仓库路径>
 | `POST /like/set` · `GET /like/check` | 网易红心（双向同步用） |
 | `POST /bridge/report` · `GET /bridge/poll` · `POST /bridge/command` | 浏览器↔宿主桥 |
 | `GET /settings` · `POST /settings/save` | 插件设置：声音通知 / 音箱文字 / 定时任务 / 反向推送 四开关 |
+| `GET /providers` | 列出已注册音源及其启用态（id / label / enabled） |
+| `POST /providers/toggle` | 运行时启停某音源 `{id, enabled}`，持久化后聚合搜索仅走启用源 |
 | `GET /schedule` | 定时任务快照（闹钟列表 + 睡眠剩余） |
 | `POST /alarm/add` · `POST /alarm/remove` | 音乐闹钟管理 |
 | `POST /sleep/set` · `POST /sleep/clear` | 睡眠定时器 |
@@ -118,9 +122,15 @@ dsh plugin --profile web add <本仓库路径>
 
 ```powershell
 pnpm exec tsx scripts/smoke-m2.ts   # 平台层：搜索/取流/歌词/登录态（真实API）
-pnpm exec tsx scripts/smoke-m4.ts   # 歌词解析：LRC/YRC/翻译对齐（11项断言）
-pnpm exec tsx scripts/smoke-m6.ts   # 花再协议：包构建/校验和/emoji清洗（无需硬件）
+pnpm exec tsx scripts/smoke-m4.ts   # 歌词解析：LRC/YRC/翻译对齐（21项断言）
+pnpm exec tsx scripts/smoke-m6.ts   # 花再协议：包构建/校验/emoji清洗（无需硬件）
 ```
+
+> 无头浏览器综合 E2E（需先 `pnpm build` 并 `powershell -File scripts/dev-server.ps1` 启动 dsh web）：
+> ```powershell
+> pnpm exec tsx scripts/e2e-all.ts   # Playwright 无头 Chrome 全功能自测：面板/搜索/播放/音乐源开关/闹钟/推荐，
+>                                     # 并捕获 console.error、pageerror 与 >=400 失败请求，用于发现回归
+> ```
 
 ## 已知问题与对策
 
