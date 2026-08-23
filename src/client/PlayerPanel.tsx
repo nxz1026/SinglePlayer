@@ -145,6 +145,7 @@ function SettingsView(): React.ReactElement {
   useEffect(() => {
     void api.haloStatus().then(({ halo }) => setHalo(halo)).catch(() => {})
     void api.getPluginSettings().then(({ settings }) => setSettings(settings)).catch(() => {})
+    void api.listProviders().then(({ providers }) => setProviders(providers)).catch(() => {})
     void refreshSchedule()
     void api.notifySoundInfo().then(setSoundInfo).catch(() => {})
   }, [])
