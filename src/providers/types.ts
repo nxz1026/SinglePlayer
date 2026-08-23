@@ -4,7 +4,7 @@
 export type ProviderId = string
 
 /** 内置已知平台（仅用于 UI/默认启用，非白名单）。 */
-export const KNOWN_PROVIDERS = ['netease', 'qq'] as const
+export const KNOWN_PROVIDERS = ['netease', 'qq', 'kugou'] as const
 
 /**
  * 音乐源契约 —— 所有平台（网易/QQ/新增源）统一实现此接口。

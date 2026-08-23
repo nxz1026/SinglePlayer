@@ -7,9 +7,11 @@
  *   2. 在 installBuiltinProviders() 里 registerProvider(...) 一次（或在运行时动态注册）。
  */
 
+import { KNOWN_PROVIDERS } from './types.ts'
 import type { AuthStatusItem, LyricPayload, MusicProvider, ProviderId, Quality, SongUrlResult, Track } from './types.ts'
 import { neteaseProvider } from './netease.ts'
 import { qqProvider } from './qq.ts'
+import { kugouProvider } from './kugou.ts'
 import { loadEnabledProviderIds, saveEnabledProviderIds } from '../store/settings.ts'
 
 const registry = new Map<ProviderId, MusicProvider>()
@@ -81,10 +83,16 @@ function persistEnabled(): void {
 export function installBuiltinProviders(): void {
   registerProvider(neteaseProvider)
   registerProvider(qqProvider)
-  // 若设置里已有启用集，则按设置覆盖默认全开。
+  registerProvider(kugouProvider)
+  // 若设置里已有启用集，则按设置覆盖默认全开；新增的内置源默认启用。
   const saved = loadEnabledProviderIds()
   if (saved.length) {
-    for (const id of allProviderIds()) setEnabled(id, saved.includes(id))
+    const savedSet = new Set(saved)
+    for (const id of allProviderIds()) {
+      if (savedSet.has(id)) setEnabled(id, true)
+      else if ((KNOWN_PROVIDERS as readonly string[]).includes(id)) setEnabled(id, true)
+      else setEnabled(id, false)
+    }
   }
   // 修复：把当前启用集同步写回设置，使 settings.enabledProviders 与运行时
   // （默认全开）保持一致，避免「空数组被误读为全禁用」的语义歧义。
