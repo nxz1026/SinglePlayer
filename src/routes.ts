@@ -6,14 +6,14 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { logError, logInfo, logWarn } from './log.ts'
 import { proxyAudio } from './proxy/audio.ts'
 import * as netease from './providers/netease.ts'
-import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
+import { allProviderIds, getProvider, hasProvider, isEnabled, listProviders, enabledProviderIds, setEnabled } from './providers/registry.ts'
 import { drainCommands, nowPlayingSnapshot, pushCommand, reportNowPlaying } from './bridge.ts'
 import { trackKey } from './providers/types.ts'
 import { addTrack, createList, deleteList, getLists, getStats, recordPlay, removeTrack } from './store/library.ts'
 import type { BridgeCommand, NowPlayingReport } from './providers/types.ts'
 import type { ProviderId, Quality } from './providers/types.ts'
-import { loadAuth, saveAuth } from './store/auth.ts'
+import { saveAuth } from './store/auth.ts'
 import { buildRecommendSections, buildShuffleMix } from './recommend.ts'
 import { makeHaloRoutes } from './halo/routes.ts'
 import { getSettings, patchSettings } from './store/settings.ts'
@@ -57,14 +57,14 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
   }
 }
 
-/** 解析平台限定 id：`netease:123456` / `qq:<mid>`。 */
+/** 解析平台限定 id：`netease:123456` / `qq:<mid>` / 任意已注册音源。 */
 export function parseTrackId(id: string): { provider: ProviderId; songId: string } | undefined {
   const index = id.indexOf(':')
   if (index <= 0) return undefined
   const provider = id.slice(0, index)
   const songId = id.slice(index + 1)
-  if ((provider !== 'netease' && provider !== 'qq') || !songId) return undefined
-  return { provider: provider as ProviderId, songId }
+  if (!songId) return undefined
+  return { provider, songId }
 }
 
 export function makeRoutes(ctx: Context): WebRoute[] {
@@ -117,13 +117,10 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       const parsed = parseTrackId(query.get('id') ?? '')
       if (!parsed) throw new Error('bad track id（期望 netease:<id> 或 qq:<mid>）')
       const quality = (query.get('quality') ?? 'exhigh') as Quality | string
-      let result
-      if (parsed.provider === 'netease') {
-        result = await netease.songUrl(parsed.songId, normalizeQuality(quality))
-      } else {
-        const mediaMid = query.get('mediaMid') ?? ''
-        result = await qq.songUrl(parsed.songId, quality, mediaMid)
-      }
+      const provider = getProvider(parsed.provider)
+      if (!provider) throw new Error(`未知音源: ${parsed.provider}`)
+      const mediaMid = query.get('mediaMid') ?? ''
+      const result = await provider.songUrl(parsed.songId, normalizeQuality(quality), { mediaMid })
       if (result.url) {
         logInfo(`url ok ${parsed.provider}:${parsed.songId} level=${result.quality ?? '?'}`)
       } else {
@@ -135,9 +132,9 @@ export function makeRoutes(ctx: Context): WebRoute[] {
     get(`${API_PREFIX}/lyric`, async query => {
       const parsed = parseTrackId(query.get('id') ?? '')
       if (!parsed) throw new Error('bad track id')
-      const payload = parsed.provider === 'netease'
-        ? await netease.lyric(parsed.songId)
-        : await qq.lyric(parsed.songId, query.get('numericId') ?? '')
+      const provider = getProvider(parsed.provider)
+      if (!provider) throw new Error(`未知音源: ${parsed.provider}`)
+      const payload = await provider.lyric(parsed.songId, { numericId: query.get('numericId') ?? '' })
       return { lyric: payload }
     }),
 
@@ -175,15 +172,8 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       return { saved: true }
     }),
     get(`${API_PREFIX}/auth/status`, async () => {
-      const [neteaseStatus] = await Promise.all([netease.authStatus()])
-      const qqCookie = loadAuth().qqCookie
-      const qqUin = qqCookie ? extractQQUin(qqCookie) : ''
-      return {
-        providers: [
-          neteaseStatus,
-          { provider: 'qq', loggedIn: !!qqUin },
-        ],
-      }
+      const providers = await Promise.all(listProviders().map(p => p.authStatus()))
+      return { providers }
     }),
 
     // ---- 网易红心收藏 ----
@@ -282,6 +272,25 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       return { settings: patchSettings(patch) }
     }),
 
+    // ---- 音乐源管理（运行时启停已注册音源；新增源由开发者放 providers/<x>.ts 注册） ----
+    get(`${API_PREFIX}/providers`, async () => {
+      return {
+        providers: listProviders().map(p => ({
+          id: p.id,
+          label: p.label,
+          description: p.description ?? '',
+          enabled: isEnabled(p.id),
+        })),
+      }
+    }),
+    post(`${API_PREFIX}/providers/toggle`, async body => {
+      const id = String(body.id ?? '')
+      const on = body.enabled === true
+      if (!hasProvider(id)) throw new Error(`未知音源: ${id}`)
+      setEnabled(id, on)
+      return { id, enabled: isEnabled(id) }
+    }),
+
     // ---- 定时任务（闹钟 + 睡眠定时器） ----
     get(`${API_PREFIX}/schedule`, async () => scheduleSnapshot()),
     post(`${API_PREFIX}/alarm/add`, async body => ({
@@ -313,9 +322,9 @@ function rawProviderList(raw: string): ProviderId[] {
   const valid: ProviderId[] = []
   for (const part of raw.split(',')) {
     const trimmed = part.trim()
-    if (trimmed === 'netease' || trimmed === 'qq') valid.push(trimmed)
+    if (allProviderIds().includes(trimmed)) valid.push(trimmed)
   }
-  return valid.length ? valid : ['netease', 'qq']
+  return valid.length ? valid : enabledProviderIds()
 }
 
 function normalizeQuality(raw: string): Quality {
@@ -323,14 +332,6 @@ function normalizeQuality(raw: string): Quality {
     standard: 'standard', exhigh: 'exhigh', lossless: 'lossless', hires: 'hires', jymaster: 'jymaster',
   }
   return map[raw.toLowerCase()] ?? 'exhigh'
-}
-
-function extractQQUin(cookieText: string): string {
-  for (const part of cookieText.split(';')) {
-    const [key, ...rest] = part.trim().split('=')
-    if ((key === 'uin' || key === 'wxuin' || key === 'p_uin') && rest.join('=')) return rest.join('=')
-  }
-  return ''
 }
 
 /** 宽松校验桥命令（工具侧也可直接调 pushCommand，此入口供调试）。 */

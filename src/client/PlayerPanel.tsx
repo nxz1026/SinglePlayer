@@ -132,6 +132,7 @@ function SettingsView(): React.ReactElement {
   const [quality, setQuality] = useState(getQualityPref())
   const [halo, setHalo] = useState<import('./api.ts').HaloStatus | null>(null)
   const [settings, setSettings] = useState<import('./api.ts').PluginSettings | null>(null)
+  const [providers, setProviders] = useState<import('./api.ts').ProviderInfo[]>([])
   const [schedule, setSchedule] = useState<import('./api.ts').ScheduleStatus | null>(null)
   const [savedNote, setSavedNote] = useState('')
   const [alarmTime, setAlarmTime] = useState('07:30')
@@ -142,6 +143,7 @@ function SettingsView(): React.ReactElement {
   useEffect(() => {
     void api.haloStatus().then(({ halo }) => setHalo(halo)).catch(() => {})
     void api.getPluginSettings().then(({ settings }) => setSettings(settings)).catch(() => {})
+    void api.listProviders().then(({ providers }) => setProviders(providers)).catch(() => {})
     void refreshSchedule()
   }, [])
 
@@ -250,8 +252,27 @@ function SettingsView(): React.ReactElement {
           checked={settings?.reversePushEnabled ?? false}
           onChange={event => patchSwitches({ reversePushEnabled: event.target.checked })}
         />
-        反向推送（切歌写入会话动态）
+          反向推送（切歌写入会话动态）
       </label>
+
+      <div className="dshm-set-title">音乐源</div>
+      {providers.length === 0 ? (
+        <div className="dshm-note">暂无可用音源</div>
+      ) : providers.map(p => (
+        <label className="dshm-check-row" key={p.id}>
+          <input
+            type="checkbox"
+            checked={p.enabled}
+            onChange={event => {
+              const on = event.target.checked
+              void api.toggleProvider(p.id, on)
+                .then(({ enabled }) => setProviders(prev => prev.map(it => it.id === p.id ? { ...it, enabled } : it)))
+                .catch(noteError)
+            }}
+          />
+          {p.label}{p.description ? `（${p.description}）` : ''}
+        </label>
+      ))}
       {settings?.schedulerEnabled === false ? (
         <div className="dshm-note">定时任务已关闭：闹钟与睡眠定时不会触发</div>
       ) : (

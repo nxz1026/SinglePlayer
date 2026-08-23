@@ -1,13 +1,13 @@
 /** 聚合搜索：并发多平台 → 合并去重（M2 简单交错，后续可升级 Mineradio 打分算法）。 */
 
-import { search as neteaseSearch } from './netease.ts'
-import { search as qqSearch } from './qq.ts'
+import { enabledProviders, getProvider } from './registry.ts'
 import type { ProviderId, Track } from './types.ts'
 
 export interface SearchOptions {
   keyword: string
   limit?: number
   offset?: number
+  /** 限定平台 id 列表；缺省走当前启用的全部音源。 */
   providers?: ProviderId[]
 }
 
@@ -16,11 +16,14 @@ export async function aggregateSearch(options: SearchOptions): Promise<Track[]> 
   const limit = Math.min(Math.max(options.limit ?? 12, 1), 30)
   const offset = Math.max(options.offset ?? 0, 0)
   if (!keyword) return []
-  const wanted = options.providers ?? ['netease', 'qq']
 
+  const wanted = options.providers ?? enabledProviders().map(p => p.id)
   const tasks: Array<Promise<Track[]>> = []
-  if (wanted.includes('netease')) tasks.push(neteaseSearch(keyword, limit, offset).catch(() => []))
-  if (wanted.includes('qq')) tasks.push(qqSearch(keyword, limit, offset).catch(() => []))
+  for (const id of wanted) {
+    const provider = getProvider(id)
+    if (!provider) continue
+    tasks.push(provider.search(keyword, limit, offset).catch(() => []))
+  }
 
   const results = await Promise.all(tasks)
   // 简单合并：按平台顺序拼接 + 平台内去重（跨平台同名去重交给 UI 展示层）。

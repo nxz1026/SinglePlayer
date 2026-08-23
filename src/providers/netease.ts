@@ -302,3 +302,21 @@ export async function dailyRecommend(): Promise<Track[]> {
     return []
   }
 }
+
+// ---------------------------------------------------------------- Provider 契约
+
+import type { MusicProvider } from './types.ts'
+
+/** 网易云 MusicProvider 实现（向 registry 注册，供 routes/tools/merge 统一取用）。 */
+export const neteaseProvider: MusicProvider = {
+  id: 'netease',
+  label: '网易云音乐',
+  description: '基于 NeteaseCloudMusicApi（进程内直连）',
+  search,
+  songUrl: (id, quality) => songUrl(id, quality),
+  lyric,
+  authStatus,
+  dailyRecommend,
+  chartTracksById,
+  likedTracks,
+}

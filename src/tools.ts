@@ -9,9 +9,8 @@ import { pushCommand } from './bridge.ts'
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 import { getNowPlaying } from './routes.ts'
 import type { BridgeCommand, NowPlayingReport } from './providers/types.ts'
-import * as netease from './providers/netease.ts'
-import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
+import { getProvider } from './providers/registry.ts'
 import type { ProviderId, Track } from './providers/types.ts'
 import { getHaloSync } from './halo/sync.ts'
 import { getSettings } from './store/settings.ts'
@@ -29,7 +28,7 @@ interface SearchHit {
 }
 
 async function searchHits(query: string, platform: string | undefined, limit: number): Promise<SearchHit[]> {
-  const providers: ProviderId[] | undefined = platform === 'netease' || platform === 'qq' ? [platform] : undefined
+  const providers: ProviderId[] | undefined = platform ? [platform] : undefined
   const tracks = await aggregateSearch({ keyword: query, limit, providers })
   return tracks.map(track => ({
     id: track.id,
@@ -170,20 +169,22 @@ export function registerTools(ctx: Context): () => void {
     },
     async execute(args) {
       const maxChars = Math.min(Math.max(args.max_chars ?? 3000, 200), 8000)
-      let provider: 'netease' | 'qq'
+      let providerId: string
       let songId: string
       if (args.track_id) {
         const parsed = parseIdLoose(args.track_id)
         if (!parsed) throw new Error(`bad track_id: ${args.track_id}`)
-        provider = parsed.provider
+        providerId = parsed.provider
         songId = parsed.songId
       } else {
         const current = getNowPlaying()
         if (!current) throw new Error('当前没有播放中的歌曲，请提供 track_id')
-        provider = current.provider === 'qq' ? 'qq' : 'netease'
+        providerId = current.provider
         songId = current.trackId.split(':')[1] ?? ''
       }
-      const payload = provider === 'qq' ? await qq.lyric(songId) : await netease.lyric(songId)
+      const provider = getProvider(providerId)
+      if (!provider) throw new Error(`未知音源: ${providerId}`)
+      const payload = await provider.lyric(songId, { numericId: '' })
       const lyric = payload.lrc.slice(0, maxChars) || '(无歌词)'
       return { lyric }
     },
@@ -427,12 +428,12 @@ function describeNowPlaying(value: Record<string, unknown>): string {
   return `${String(value.playing === true ? '▶ 正在播放' : '⏸ 已暂停')}：${String(value.track ?? '?')} - ${String(value.artists ?? '')} (${String(value.position ?? '')}/${String(value.duration ?? '')})`
 }
 
-function parseIdLoose(id: string): Partial<Track> & { provider: 'netease' | 'qq'; songId: string; id: string } | undefined {
+function parseIdLoose(id: string): Partial<Track> & { provider: string; songId: string; id: string } | undefined {
   const index = id.indexOf(':')
   if (index <= 0) return undefined
   const provider = id.slice(0, index)
   const songId = id.slice(index + 1)
-  if ((provider !== 'netease' && provider !== 'qq') || !songId) return undefined
+  if (!songId) return undefined
   return { provider, songId, id, name: '' }
 }
 

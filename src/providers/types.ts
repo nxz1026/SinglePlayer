@@ -1,6 +1,38 @@
 /** 平台统一模型与 Provider 契约。 */
 
-export type ProviderId = 'netease' | 'qq'
+/** 平台 id（开放：新增源只需实现 MusicProvider 并向 registry 注册，不必改此联合类型）。 */
+export type ProviderId = string
+
+/** 内置已知平台（仅用于 UI/默认启用，非白名单）。 */
+export const KNOWN_PROVIDERS = ['netease', 'qq'] as const
+
+/**
+ * 音乐源契约 —— 所有平台（网易/QQ/新增源）统一实现此接口。
+ * 新增一个音源 = 新建一个 providers/<x>.ts 实现本接口 + registerProvider 一处，
+ * 无需改动 routes/tools/merge 等消费方（对标 HaloLyricSync 的 base.py + factory.py）。
+ */
+export interface MusicProvider {
+  /** 平台限定 id（如 'netease' / 'qq' / 'lx'）。 */
+  readonly id: ProviderId
+  /** UI 展示名。 */
+  readonly label: string
+  /** 可选描述（设置面板用）。 */
+  readonly description?: string
+  /** 搜索：返回统一 Track 列表。 */
+  search(keyword: string, limit: number, offset: number): Promise<Track[]>
+  /** 取直链；extra 透传平台特有参数（如 QQ 的 mediaMid）。 */
+  songUrl(songId: string, quality: Quality, extra?: Record<string, string>): Promise<SongUrlResult>
+  /** 取歌词；extra 透传平台特有参数（如 QQ 的 numericId）。 */
+  lyric(songId: string, extra?: Record<string, string>): Promise<LyricPayload>
+  /** 登录态。 */
+  authStatus(): Promise<AuthStatusItem>
+  /** 可选：每日推荐（如网易）。 */
+  dailyRecommend?(): Promise<Track[]>
+  /** 可选：榜单曲目（如网易）。 */
+  chartTracksById?(id: string, limit: number): Promise<Track[]>
+  /** 可选：已登录用户的红心曲目（如网易）。 */
+  likedTracks?(max?: number): Promise<Track[]>
+}
 
 /** 统一曲目（跨平台聚合的最小公共面）。 */
 export interface Track {

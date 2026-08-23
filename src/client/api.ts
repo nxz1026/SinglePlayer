@@ -120,6 +120,20 @@ export const api = {
       body: JSON.stringify({ track }),
     }).catch(() => {})
   },
+  listProviders(): Promise<{ providers: ProviderInfo[] }> {
+    return get('/providers')
+  },
+  toggleProvider(id: string, enabled: boolean): Promise<{ id: string; enabled: boolean }> {
+    return post('/providers/toggle', { id, enabled })
+  },
+}
+
+/** 音乐源管理项（运行时启停）。 */
+export interface ProviderInfo {
+  id: string
+  label: string
+  description: string
+  enabled: boolean
 }
 
 export interface HaloStatus {
@@ -143,6 +157,7 @@ export interface PluginSettings {
   notifyHaloText: boolean
   schedulerEnabled: boolean
   reversePushEnabled: boolean
+  enabledProviders?: string[]
 }
 
 /** 音乐闹钟。 */

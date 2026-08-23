@@ -11,6 +11,7 @@ import { registerRoutes } from './routes.ts'
 import { registerTools } from './tools.ts'
 import { getHaloSync } from './halo/sync.ts'
 import { startScheduler } from './scheduler.ts'
+import { installBuiltinProviders } from './providers/registry.ts'
 
 /** 稳定插件名（对应 cordis.patch.yml 的 insert id）。 */
 export const name = 'music'
@@ -45,6 +46,8 @@ function installExitHooks(halo: { dispose(): void }): void {
 
 /** Cordis 插件体。 */
 export function apply(ctx: Context, _config: Config = {}): void {
+  // 注册内置音源（netease / qq）并应用启用集（幂等）。
+  installBuiltinProviders()
   ctx.effect(() => registerRoutes(ctx), 'music: routes')
   ctx.effect(() => registerTools(ctx), 'music: tools')
   ctx.effect(() => startScheduler(), 'music: scheduler')

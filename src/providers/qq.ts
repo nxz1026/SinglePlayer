@@ -394,3 +394,33 @@ export async function lyric(mid: string, numericId = ''): Promise<LyricPayload> 
     return empty
   }
 }
+
+// ---------------------------------------------------------------- cookie / 登录态
+
+/** 从 QQ Cookie 串中提取 uin（用于登录态判断）。 */
+export function extractQQUin(cookieText: string): string {
+  for (const part of cookieText.split(';')) {
+    const [key, ...rest] = part.trim().split('=')
+    if ((key === 'uin' || key === 'wxuin' || key === 'p_uin') && rest.join('=')) return rest.join('=')
+  }
+  return ''
+}
+
+// ---------------------------------------------------------------- Provider 契约
+
+import type { MusicProvider } from './types.ts'
+
+/** QQ 音乐 MusicProvider 实现（向 registry 注册）。 */
+export const qqProvider: MusicProvider = {
+  id: 'qq',
+  label: 'QQ 音乐',
+  description: '移植自 Mineradio fcg 直连 + sha1 签名',
+  search,
+  songUrl: (id, quality, extra) => songUrl(id, quality, extra?.mediaMid ?? ''),
+  lyric: (id, extra) => lyric(id, extra?.numericId ?? ''),
+  authStatus: async () => {
+    const cookie = loadAuth().qqCookie
+    const uin = cookie ? extractQQUin(cookie) : ''
+    return { provider: 'qq', loggedIn: !!uin }
+  },
+}
