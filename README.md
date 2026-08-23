@@ -26,7 +26,9 @@
 
 - **标准 dsh bundle**：一个 npm 包同时含宿主半（Cordis 插件）与浏览器半（React UI），`dsh plugin add` 即装即用；工具经 dsh tools 服务注册，模型自动发现调用
 - **AI 原生 ×12 工具**：对话「放一首晴天」「下一首」「音量调到40%」「把稻香加进队列」「明早7点半放歌叫我起床」「30分钟后暂停」「换个赛博朋克场景」——搜索、播放、进度、音量、队列、收藏、睡眠定时、音乐闹钟、音箱屏控全部可说
-- **通知双通道**：声音提示音（浏览器 Web Audio）与花再音箱文字提醒**相互独立**，各自开关；任何外部系统可 `POST /notify` 触发
+- **通知双通道**：声音提示音与花再音箱文字提醒**相互独立**，各自开关；任何外部系统可 `POST /notify` 触发
+  - **自定义提示音**：设置页上传 mp3/wav/ogg/m4a/flac（服务端魔数校验防伪装，≤3MB），可一键恢复内置「叮咚」
+  - **音箱文字置顶**：通知默认置顶常驻，直到手动消除（`/halo/notify/dismiss`）或切歌；也可设为 N 秒自动让位歌词，暂停状态下到点回时钟
 - **定时任务**：设置页可视化配置——音乐闹钟（时间+关键词+备注，随时增删）与睡眠定时器（分钟数启停+倒计时）；每日到点搜歌开播并做双通道提醒，持久化本地；总开关一键停用
 - **反向推送**：切歌事件以折叠通知写入最近活跃的会话动态（不唤醒模型、零 token）；需至少一个已打开的对话，开关可控
 - **聚合搜索**：网易云（NeteaseCloudMusicApi）+ QQ 音乐（fcg 直连 + sha1 签名，移植自 Mineradio）；关键词历史与最近结果跨开关保留
@@ -38,7 +40,7 @@
 - **花再同步**：USB HID 驱动 HALO PIXELBAR 音箱实时显示歌词（换行推送、切歌信息、暂停回时钟）；配置改动即时下发；退出自动恢复时钟界面
 - **四种播放模式**：顺序 / 列表循环 / 单曲循环 / 随机
 - **跨平台音源回退**：取流失败自动降级音质 → 跨平台同名同歌手换源 → 队列跳歌（20s 预算 + token 防竞态，骨架移植自 Mineradio provider-fallback）
-- **设置面板**：音质偏好、「通知与定时」四开关、花再同步开关与显示参数（对齐/滚动/每行字数/暂停时钟）
+- **设置面板**：音质偏好、「通知与定时」四开关 + 自定义提示音上传、闹钟/睡眠定时可视化配置、花再同步开关与显示参数（对齐/滚动/每行字数/通知时长/暂停时钟）
 - **可插拔音源架构**：`MusicProvider` 合同 + `ProviderRegistry`（对标 HaloLyricSync factory.py）。新增平台只需在 `providers/<x>.ts` 实现合同、`installBuiltinProviders()` 注册一次，`routes/tools/merge` 自动适配，无需改动消费方
 - **用户侧音源管理**：设置面板「音乐源」分组可实时启停各平台（`GET /providers` + `POST /providers/toggle`），状态持久化；停用后聚合搜索仅走启用源
 - **不重复造轮子**：平台 API 层、卡拉OK算法、音源回退骨架均自 Mineradio 移植改造；插件机制完全复用 dsh Cordis 体系
@@ -113,6 +115,9 @@ dsh plugin --profile web add <本仓库路径>
 | `POST /alarm/add` · `POST /alarm/remove` | 音乐闹钟管理 |
 | `POST /sleep/set` · `POST /sleep/clear` | 睡眠定时器 |
 | `POST /notify` | 触发双通道提醒（按开关分发） |
+| `POST /halo/notify/dismiss` | 消除置顶通知（恢复歌词/时钟） |
+| `POST /notify/sound/upload` · `GET /notify/sound/info` | 自定义提示音：上传（魔数校验）与状态查询 |
+| `GET /notify/sound/file` · `POST /notify/sound/reset` | 取回音频本体 / 恢复内置提示音 |
 | `GET /halo/status` · `POST /halo/config` | 花再状态/配置 |
 | `POST /halo/lyric` · `/halo/song` · `/halo/state` · `/halo/command` | 花再事件与花活儿 |
 

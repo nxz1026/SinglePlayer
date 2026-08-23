@@ -92,6 +92,26 @@ export const api = {
   sleepClear(): Promise<{ cleared: boolean }> {
     return post('/sleep/clear', {})
   },
+  async notifySoundInfo(): Promise<{ exists: boolean; ext?: string; bytes?: number }> {
+    return get('/notify/sound/info')
+  },
+  /** 上传自定义提示音：原始二进制，服务端按魔数校验格式。 */
+  async uploadNotifySound(file: File): Promise<{ exists: boolean; ext: string; bytes: number }> {
+    const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+    const resp = await fetch(`${BASE}/notify/sound/upload?ext=${encodeURIComponent(ext)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: file,
+    })
+    const payload = (await resp.json().catch(() => ({}))) as Record<string, unknown>
+    if (!resp.ok || payload.ok !== true) {
+      throw new Error(typeof payload.error === 'string' ? payload.error : `HTTP ${resp.status}`)
+    }
+    return payload as { exists: boolean; ext: string; bytes: number }
+  },
+  async resetNotifySound(): Promise<void> {
+    await fetch(`${BASE}/notify/sound/reset`, { method: 'POST' })
+  },
   shuffleMix(): Promise<{ tracks: Track[] }> {
     return get('/shuffle-mix')
   },
@@ -147,6 +167,7 @@ export interface HaloStatus {
     dynamicScroll?: boolean
     idleClockWhenPaused?: boolean
     maxCharsPerLine?: number
+    notifyDurationSec?: number
     screenColor?: { r: number; g: number; b: number }
   }
 }

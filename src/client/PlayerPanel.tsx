@@ -139,12 +139,14 @@ function SettingsView(): React.ReactElement {
   const [alarmKeyword, setAlarmKeyword] = useState('')
   const [alarmLabel, setAlarmLabel] = useState('')
   const [sleepMinutes, setSleepMinutes] = useState(30)
+  const soundFileRef = useRef<HTMLInputElement>(null)
+  const [soundInfo, setSoundInfo] = useState<Awaited<ReturnType<typeof api.notifySoundInfo>> | null>(null)
 
   useEffect(() => {
     void api.haloStatus().then(({ halo }) => setHalo(halo)).catch(() => {})
     void api.getPluginSettings().then(({ settings }) => setSettings(settings)).catch(() => {})
-    void api.listProviders().then(({ providers }) => setProviders(providers)).catch(() => {})
     void refreshSchedule()
+    void api.notifySoundInfo().then(setSoundInfo).catch(() => {})
   }, [])
 
   const refreshSchedule = useCallback(() =>
@@ -199,6 +201,20 @@ function SettingsView(): React.ReactElement {
     void api.alarmRemove(id).then(refreshSchedule).catch(() => {})
   }, [refreshSchedule])
 
+  const uploadSound = useCallback((file: File) => {
+    void api.uploadNotifySound(file)
+      .then(info => { setSoundInfo(info); setSavedNote('提示音已更新') })
+      .then(() => { window.setTimeout(() => setSavedNote(''), 1500) })
+      .catch(noteError)
+  }, [noteError])
+
+  const resetSound = useCallback(() => {
+    void api.resetNotifySound()
+      .then(() => api.notifySoundInfo())
+      .then(setSoundInfo)
+      .catch(noteError)
+  }, [noteError])
+
   const config = halo?.config
 
   return (
@@ -252,8 +268,31 @@ function SettingsView(): React.ReactElement {
           checked={settings?.reversePushEnabled ?? false}
           onChange={event => patchSwitches({ reversePushEnabled: event.target.checked })}
         />
-          反向推送（切歌写入会话动态）
+        反向推送（切歌写入会话动态）
       </label>
+      <div className="dshm-set-title">提示音</div>
+      <div className="dshm-alarm-form">
+        <span title={soundInfo?.exists ? '通知时播放你上传的音频' : '通知时播放内置「叮咚」双音'}>
+          {soundInfo?.exists
+            ? `自定义 ${String(soundInfo.ext).toUpperCase()}（${Math.round((soundInfo.bytes ?? 0) / 1024)}KB）`
+            : '内置双音'}
+        </span>
+        <button type="button" className="dshm-mini" onClick={() => soundFileRef.current?.click()}>上传</button>
+        {soundInfo?.exists && (
+          <button type="button" className="dshm-mini" onClick={resetSound}>恢复默认</button>
+        )}
+        <input
+          ref={soundFileRef}
+          type="file"
+          accept=".mp3,.wav,.ogg,.m4a,.flac"
+          className="dshm-file-hidden"
+          onChange={event => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) uploadSound(file)
+          }}
+        />
+      </div>
 
       <div className="dshm-set-title">音乐源</div>
       {providers.length === 0 ? (
@@ -392,6 +431,19 @@ function SettingsView(): React.ReactElement {
           value={config?.maxCharsPerLine ?? 32}
           disabled={!halo}
           onChange={event => patchHalo({ maxCharsPerLine: Number(event.target.value) || 32 })}
+        />
+      </label>
+      <label className="dshm-set-row">
+        通知时长(秒)
+        <input
+          className="dshm-num dshm-time"
+          type="number"
+          min={0}
+          max={120}
+          value={config?.notifyDurationSec ?? 0}
+          title="音箱文字提醒的停留时长；0 = 置顶，直到手动消除或切歌"
+          disabled={!halo}
+          onChange={event => patchHalo({ notifyDurationSec: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })}
         />
       </label>
       {savedNote && <div className="dshm-note dshm-note-ok">{savedNote}</div>}

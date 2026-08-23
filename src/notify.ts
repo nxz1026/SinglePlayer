@@ -14,7 +14,7 @@ export interface NotifyResult {
   haloTextSent: boolean
 }
 
-export function dispatchNotify(title: string, text = ''): NotifyResult {
+export async function dispatchNotify(title: string, text = ''): Promise<NotifyResult> {
   const settings = getSettings()
   const result: NotifyResult = { soundQueued: false, haloTextSent: false }
   const body = `${title}${text ? `：${text}` : ''}`.trim()
@@ -24,8 +24,10 @@ export function dispatchNotify(title: string, text = ''): NotifyResult {
   }
   if (settings.notifyHaloText) {
     try {
-      getHaloSync().onNotify(body)
-      result.haloTextSent = true
+      result.haloTextSent = await getHaloSync().onNotify(body)
+      if (!result.haloTextSent) {
+        logWarn('[notify] 音箱未连接，文字提醒未送达')
+      }
     } catch (cause) {
       logWarn(`[notify] 音箱提醒失败: ${cause instanceof Error ? cause.message : String(cause)}`)
     }

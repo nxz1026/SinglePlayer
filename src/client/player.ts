@@ -457,10 +457,24 @@ export function setMode(mode: PlayMode): void {
   set({ mode })
 }
 
-/** 提示音：Web Audio 双音（通知通道，独立于花再音箱）。 */
+/** 提示音：优先用户上传的自定义音频；失败回退 Web Audio 内置双音。 */
 let chimeCtx: AudioContext | null = null
 
-function playChime(): void {
+async function playCustomSound(): Promise<boolean> {
+  try {
+    const resp = await fetch('/api/dsh-music/notify/sound/info')
+    const info = (await resp.json()) as { exists?: boolean }
+    if (!info?.exists) return false
+    const audio = new Audio(`/api/dsh-music/notify/sound/file?v=${Date.now()}`)
+    audio.volume = Math.min(1, Math.max(state.volume, 0.6))
+    await audio.play()
+    return true
+  } catch {
+    return false
+  }
+}
+
+function playBuiltInChime(): void {
   try {
     const Ctor = window.AudioContext
       ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
@@ -483,6 +497,10 @@ function playChime(): void {
       osc.stop(start + 0.38)
     }
   } catch { /* 尽力而为 */ }
+}
+
+function playChime(): void {
+  void playCustomSound().then(ok => { if (!ok) playBuiltInChime() })
 }
 
 /** 音质偏好（设置面板可调，默认 exhigh）。 */

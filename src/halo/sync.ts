@@ -24,6 +24,8 @@ interface HaloConfig {
   dynamicScroll: boolean
   idleClockWhenPaused: boolean
   maxCharsPerLine: number
+  /** 通知文字停留秒数；<=0 表示置顶直到消除或切歌。 */
+  notifyDurationSec: number
   screenColor: { r: number; g: number; b: number }
 }
 
@@ -33,6 +35,7 @@ const DEFAULT_CONFIG: HaloConfig = {
   dynamicScroll: false,
   idleClockWhenPaused: true,
   maxCharsPerLine: 32,
+  notifyDurationSec: 0,
   screenColor: { r: 102, g: 175, b: 255 },
 }
 
@@ -63,6 +66,7 @@ export class HaloSync {
   private simulated = false
   private playing = false
   private lastLine: string | null = null
+  private notifyPinned = false
   private songTextUntil = 0
   private featureFails: Record<string, number> = {}
   private featureDisabled: Record<string, boolean> = {}
@@ -295,10 +299,11 @@ export class HaloSync {
   onLyric(text: string): void {
     if (!this.config.enabled || !this.playing) return
     this.ensureConnected()
-    if (Date.now() < this.songTextUntil) return // 切歌信息展示中
     const line = String(text ?? '').trim()
     if (!line || line === this.lastLine) return
+    // 通知/切歌信息展示期间：只记住最新行不上屏，供消除通知后立即恢复。
     this.lastLine = line
+    if (Date.now() < this.songTextUntil || this.notifyPinned) return
     this.sendFeature('text', buildTextPacket(line, 0, this.config.maxCharsPerLine))
   }
 
@@ -307,6 +312,7 @@ export class HaloSync {
     this.ensureConnected()
     // 注意：不要用 emoji 前缀（固件不支持 4 字节 UTF-8，会打乱整行解码）。
     const info = `${name || '未知'} - ${artist}`.trimEnd()
+    this.notifyPinned = false // 切歌自动消除置顶通知
     this.songTextUntil = Date.now() + 3000
     this.lastLine = null
     this.sendFeature('text', buildTextPacket(info, 0, this.config.maxCharsPerLine))
@@ -322,16 +328,53 @@ export class HaloSync {
   }
 
   /**
-   * 文字提醒（通知通道）：不要求正在播放，直接上屏并短暂压制歌词，
-   * 随后由歌词自然接管。仅要求已启用同步且设备在线。
+   * 文字提醒（通知通道）：不要求正在播放，直接上屏并压制歌词。
+   * 时长取 config.notifyDurationSec（默认 8s；<=0 表示置顶，直到 dismissNotify 或切歌）。
+   * 设备未连接时先走一次显式重连并短暂等待，避免静默丢通知。
    */
-  onNotify(text: string): void {
-    if (!this.config.enabled || !this.connected) return
+  async onNotify(text: string): Promise<boolean> {
+    if (!this.config.enabled) return false
     const line = String(text ?? '').trim()
-    if (!line) return
-    this.songTextUntil = Date.now() + 4000
+    if (!line) return false
+    if (!this.connected) {
+      await this.connect().catch(() => false)
+      for (let i = 0; i < 10 && !this.connected; i++) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    }
+    if (!this.connected) {
+      logWarn('[halo] notify 发送失败：设备未连接（USB 未插或驱动未就绪）')
+      return false
+    }
+    const seconds = Math.trunc(Number(this.config.notifyDurationSec ?? 8))
+    this.notifyPinned = !(seconds > 0)
+    this.songTextUntil = Date.now() + Math.max(seconds, 1) * 1000
     this.lastLine = null
-    this.sendFeature('text', buildTextPacket(line, 0, this.config.maxCharsPerLine))
+    const ok = this.sendFeature('text', buildTextPacket(line, 0, this.config.maxCharsPerLine))
+    // 暂停状态下的限时通知：到点后回时钟，避免文字一直挂着。
+    if (ok && !this.notifyPinned) {
+      const until = this.songTextUntil
+      setTimeout(() => {
+        if (this.notifyPinned || this.playing || Date.now() < this.songTextUntil) return
+        if (until !== this.songTextUntil) return
+        if (this.config.idleClockWhenPaused) this.sendFeature('clock', buildClockPacket(1))
+      }, Math.max(seconds, 1) * 1000 + 300)
+    }
+    return ok
+  }
+
+  /** 消除置顶/展示中的通知：立即恢复上一句歌词；暂停中则回时钟。 */
+  dismissNotify(): boolean {
+    this.notifyPinned = false
+    this.songTextUntil = 0
+    if (!this.config.enabled || !this.connected) return false
+    if (this.playing && this.lastLine) {
+      this.sendFeature('text', buildTextPacket(this.lastLine, 0, this.config.maxCharsPerLine))
+    } else if (!this.playing && this.config.idleClockWhenPaused) {
+      this.lastLine = null
+      this.sendFeature('clock', buildClockPacket(1))
+    }
+    return true
   }
 
   /** 屏色设置：走 setConfig 以持久化并即时重发屏幕模式。 */
