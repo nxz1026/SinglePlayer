@@ -18,6 +18,8 @@ import { logInfo, logWarn } from '../log.ts'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnyRecord = Record<string, any>
 
+const hexId = (n: unknown): string => '0x' + (Number(n) || 0).toString(16).toUpperCase().padStart(4, '0')
+
 interface HaloConfig {
   enabled: boolean
   align: keyof typeof ALIGN
@@ -141,6 +143,8 @@ export class HaloSync {
   status(): Record<string, unknown> {
     // 浏览器端会低频轮询 status：设备数走 15s 缓存，避免高频枚举 HID。
     if (Date.now() - this.devicesCacheAt > 15_000) this.listDevices()
+    // 已启用但未连上：借 status 轮询节流重连（插上 USB 后自动连上）。
+    if (this.config.enabled && !this.connected) this.ensureConnected()
     return {
       enabled: this.config.enabled,
       connected: this.connected,
@@ -160,11 +164,18 @@ export class HaloSync {
     } catch {
       return null
     }
-    for (const d of devices) {
-      if (d.vendorId === VENDOR_ID && d.productId === PRODUCT_ID && d.usagePage === USAGE_PAGE && d.usage === USAGE) return d
-    }
-    for (const d of devices) {
-      if (d.vendorId === VENDOR_ID && d.productId === PRODUCT_ID) return d
+    const exact = devices.filter(
+      d => d.vendorId === VENDOR_ID && d.productId === PRODUCT_ID && d.usagePage === USAGE_PAGE && d.usage === USAGE,
+    )
+    if (exact[0]) return exact[0]
+    // 退而求其次：同 VID+PID 的任意 HID 接口（有的设备把屏幕控制放在别的 usage）。
+    const byVidPid = devices.filter(d => d.vendorId === VENDOR_ID && d.productId === PRODUCT_ID)
+    if (byVidPid[0]) return byVidPid[0]
+    // 再退：仅 VID 匹配（不同型号/PID 变体兜底）。
+    const byVendor = devices.filter(d => d.vendorId === VENDOR_ID)
+    if (byVendor[0]) {
+      logWarn(`[halo] 未精确匹配 ${hexId(VENDOR_ID)}:${hexId(PRODUCT_ID)}，改用同厂商设备（PID ${hexId(byVendor[0].productId)}）`)
+      return byVendor[0]
     }
     return null
   }
@@ -180,7 +191,10 @@ export class HaloSync {
     }
     const info = this.findDevice()
     if (!info?.path) {
-      logWarn('[halo] 未找到花再设备（USB 未连接或驱动未就绪）')
+      const dump = this.listDevices()
+        .map(d => `${hexId(d.vendorId)}:${hexId(d.productId)} up=${d.usagePage} u=${d.usage}`)
+        .join(' | ') || '(无 HID 设备)'
+      logWarn(`[halo] 未找到花再设备（USB 未连接或驱动未就绪）。已枚举 HID: ${dump}`)
       return false
     }
     try {
@@ -189,10 +203,11 @@ export class HaloSync {
       this.device = dev
       this.connected = true
       this.simulated = false
-      logInfo(`[halo] 已连接花再音箱`)
+      logInfo(`[halo] 已连接花再音箱（${hexId(VENDOR_ID)}:${hexId(PRODUCT_ID)}）`)
       this.applyScreenMode()
       return true
-    } catch {
+    } catch (cause) {
+      logWarn(`[halo] 打开花再设备失败: ${cause instanceof Error ? cause.message : String(cause)}`)
       return false
     }
   }
