@@ -277,6 +277,10 @@ export async function startRandomMix(): Promise<number> {
 }
 
 function friendlyReason(reason: string, track: Track): string {
+  if (track.vip) {
+    const label = PROVIDER_LABEL[track.provider] ?? track.provider
+    return `该歌曲为 VIP 专属，请先登录${label}后再播放`
+  }
   if (/VIP|未登录/.test(reason)) {
     return `${PROVIDER_LABEL[track.provider] ?? track.provider} 曲目为 VIP/需登录：请在「账号」页登录后播放`
   }

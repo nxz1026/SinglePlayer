@@ -25,8 +25,12 @@ export async function buildRecommendSections(): Promise<Array<{ source: string; 
 }
 
 /**
- * 随便听听：曲库+红心曲目随机打乱，取前 36 首开播。
+ * 随便听听：本地曲库 + 平台红心 混合后随机打乱开播。
+ * 未登录或曲库为空时，从公开榜单（热歌/飙升/新歌等）匿名补歌，保证开播即有曲。
  */
+const SHUFFLE_SIZE = 36
+const FALLBACK_CHARTS = ['3778678', '19723756', '3779629', '2884035']
+
 export async function buildShuffleMix(): Promise<Track[]> {
   const seen = new Set<string>()
   const pool: Track[] = []
@@ -43,10 +47,21 @@ export async function buildShuffleMix(): Promise<Track[]> {
     for (const track of await netease.likedTracks(300)) pushUnique(track)
   } catch { /* 未登录/网络失败则跳过 */ }
 
-  // Fisher–Yates 洗牌取前 36
+  // 池子不足时，从公开榜单匿名补歌（无需登录）。
+  if (pool.length < SHUFFLE_SIZE) {
+    for (const chartId of FALLBACK_CHARTS) {
+      if (pool.length >= SHUFFLE_SIZE) break
+      try {
+        const tracks = await netease.chartTracksById(chartId, 30)
+        for (const track of tracks) pushUnique(track)
+      } catch { /* 榜单失败时试下一个 */ }
+    }
+  }
+
+  // Fisher–Yates 洗牌取前 SHUFFLE_SIZE
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[pool[i], pool[j]] = [pool[j] as Track, pool[i] as Track]
   }
-  return pool.slice(0, 36)
+  return pool.slice(0, SHUFFLE_SIZE)
 }
