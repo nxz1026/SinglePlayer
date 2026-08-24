@@ -231,6 +231,13 @@ export function makeRoutes(ctx: Context): WebRoute[] {
     // ---- 推荐：登录→每日个性化；另附 1~2 个按日期随机轮换的官方榜单 ----
     get(`${API_PREFIX}/recommend`, async () => ({ sections: await buildRecommendSections() })),
 
+    get(`${API_PREFIX}/chart`, async query => {
+      const id = query.get('id') ?? '3778678'
+      const limit = Number(query.get('limit') ?? 50) || 50
+      const tracks = await netease.chartTracksById(id, limit)
+      return { tracks }
+    }),
+
     // ---- 随便听听：曲库+红心 Top30 混入 6 首随机，打乱返回 ----
     get(`${API_PREFIX}/shuffle-mix`, async () => ({ tracks: await buildShuffleMix() })),
 

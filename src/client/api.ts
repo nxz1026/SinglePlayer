@@ -124,6 +124,9 @@ export const api = {
   recommend(): Promise<{ sections: Array<{ source: string; title: string; tracks: Track[] }> }> {
     return get('/recommend')
   },
+  chartTracks(id = '3778678', limit = 50): Promise<{ tracks: Track[] }> {
+    return get(`/chart?id=${encodeURIComponent(id)}&limit=${limit}`)
+  },
   getLists(): Promise<{ lists: LibraryList[]; recent: Track[]; plays: Record<string, { count: number; lastAt: number }> }> {
     return get('/lists')
   },

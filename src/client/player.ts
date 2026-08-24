@@ -276,6 +276,24 @@ export async function startRandomMix(): Promise<number> {
   }
 }
 
+/** 热歌榜：直接拉公开榜单（匿名可用，无需登录），一键替换队列并开播。 */
+export async function startChartMix(chartId = '3778678', title = '热歌榜'): Promise<number> {
+  set({ note: `正在加载${title}…`, error: '' })
+  try {
+    const { tracks } = await api.chartTracks(chartId, 50)
+    if (!tracks.length) {
+      set({ note: '' })
+      return 0
+    }
+    set({ queue: [...tracks], index: -1 })
+    jumpTo(0)
+    return tracks.length
+  } catch (error) {
+    set({ note: '', error: error instanceof Error ? error.message : String(error) })
+    return 0
+  }
+}
+
 function friendlyReason(reason: string, track: Track): string {
   if (track.vip) {
     const label = PROVIDER_LABEL[track.provider] ?? track.provider

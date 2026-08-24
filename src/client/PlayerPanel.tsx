@@ -24,6 +24,7 @@ import {
   seek,
   setQualityPref,
   setVolume,
+  startChartMix,
   startRandomMix,
   toggle,
   toggleShowLyric,
@@ -471,42 +472,12 @@ function saveHistory(keyword: string): string[] {
   return history
 }
 
-/** 最近一次搜索（模块级缓存：切 Tab、关开面板不丢；跨会话靠上面的关键词历史）。 */
-let recentSearch: { keyword: string; tracks: Track[] } | null = null
-
-function readRecentSearch(): { keyword: string; tracks: Track[] } {
-  if (recentSearch) return recentSearch
-  try {
-    const raw = JSON.parse(localStorage.getItem('dshm-last-search') ?? '') as
-      | { keyword?: unknown; tracks?: unknown }
-      | null
-    if (
-      raw && typeof raw.keyword === 'string'
-      && Array.isArray(raw.tracks) && raw.tracks.length > 0
-    ) {
-      recentSearch = { keyword: raw.keyword, tracks: raw.tracks as Track[] }
-      return recentSearch
-    }
-  } catch {
-    // 无存档。
-  }
-  return { keyword: '', tracks: [] }
-}
-
-function saveRecentSearch(keyword: string, tracks: Track[]): void {
-  recentSearch = { keyword, tracks }
-  try {
-    localStorage.setItem('dshm-last-search', JSON.stringify({ keyword, tracks }))
-  } catch {
-    // 存不下就算了（结果太大等）。
-  }
-}
-
 function SearchTab(): React.ReactElement {
-  const [keyword, setKeyword] = useState(() => readRecentSearch().keyword)
-  const [results, setResults] = useState<Track[]>(() => readRecentSearch().tracks)
+  const [keyword, setKeyword] = useState('')
+  const [results, setResults] = useState<Track[]>([])
   const [busy, setBusy] = useState(false)
   const [mixing, setMixing] = useState(false)
+  const [charting, setCharting] = useState(false)
   const [error, setError] = useState('')
   const [history, setHistory] = useState<string[]>(readHistory)
 
@@ -518,7 +489,6 @@ function SearchTab(): React.ReactElement {
     try {
       const { tracks } = await api.search(text, 20)
       setResults(tracks)
-      saveRecentSearch(text, tracks)
       setHistory(saveHistory(text))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -539,6 +509,14 @@ function SearchTab(): React.ReactElement {
           value={keyword}
           onChange={event => setKeyword(event.target.value)}
         />
+        {keyword && (
+          <button
+            type="button"
+            className="dshm-clear"
+            title="清空搜索"
+            onClick={() => { setKeyword(''); setResults([]) }}
+          >✕</button>
+        )}
         <button type="submit" className="dshm-go" disabled={busy}>{busy ? '…' : '搜'}</button>
       </form>
       <button
@@ -551,6 +529,16 @@ function SearchTab(): React.ReactElement {
           void startRandomMix().finally(() => setMixing(false))
         }}
       >{mixing ? '正在生成…' : '🎲 随便听听'}</button>
+      <button
+        type="button"
+        className="dshm-lucky"
+        disabled={charting}
+        title="热门榜单，无需登录一键播放"
+        onClick={() => {
+          setCharting(true)
+          void startChartMix().finally(() => setCharting(false))
+        }}
+      >{charting ? '正在加载…' : '🔥 热歌榜'}</button>
       {history.length > 0 && (
         <div className="dshm-history">
           {history.map(item => (
