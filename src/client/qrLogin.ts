@@ -41,11 +41,13 @@ export function useQrLogin(): QrLoginState {
 }
 
 const MAX_RENEWALS = 3
+const QR_TTL_MS = 110_000
 
 let seq = 0
 let timer: number | undefined
 let currentKey = ''
 let renewals = 0
+let qrStartAt = 0
 
 function clearTimer(): void {
   if (timer !== undefined) {
@@ -77,6 +79,7 @@ async function begin(): Promise<void> {
     currentKey = key
     const { img } = await api.neteaseQrCreate(key)
     if (mySeq !== seq) return
+    qrStartAt = Date.now()
     set({ phase: 'waiting', img, note: renewals > 0 ? `二维码已过期，已自动刷新（第 ${renewals} 次）` : undefined })
     clearTimer()
     timer = window.setInterval(() => { void poll() }, 2000)
@@ -94,6 +97,14 @@ async function poll(): Promise<void> {
     const { qr } = await api.neteaseQrCheck(key)
     if (mySeq !== seq) return
     if (qr.code === 801) {
+      // 超时未扫：主动刷新（兜底，避免后端过期判定遗漏导致卡死）。
+      if (Date.now() - qrStartAt > QR_TTL_MS) {
+        renewals += 1
+        if (renewals <= MAX_RENEWALS) { void begin(); return }
+        clearTimer()
+        set({ phase: 'given-up', note: '二维码多次过期，请点击重新获取' })
+        return
+      }
       set({ phase: 'waiting' })
     } else if (qr.code === 802) {
       set({ phase: 'scanned' })

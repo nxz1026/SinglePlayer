@@ -127,6 +127,28 @@ export const api = {
   chartTracks(id = '3778678', limit = 50): Promise<{ tracks: Track[] }> {
     return get(`/chart?id=${encodeURIComponent(id)}&limit=${limit}`)
   },
+  /** 花再音响（HID 屏幕）歌词推送：尽力而为，失败静默，绝不阻塞播放。 */
+  haloSong(name: string, artist: string): Promise<void> {
+    return fetch(`${BASE}/halo/song`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, artist }),
+    }).then(() => {}).catch(() => {})
+  },
+  haloLyric(text: string): Promise<void> {
+    return fetch(`${BASE}/halo/lyric`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }).then(() => {}).catch(() => {})
+  },
+  haloState(playing: boolean): Promise<void> {
+    return fetch(`${BASE}/halo/state`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playing }),
+    }).then(() => {}).catch(() => {})
+  },
   getLists(): Promise<{ lists: LibraryList[]; recent: Track[]; plays: Record<string, { count: number; lastAt: number }> }> {
     return get('/lists')
   },

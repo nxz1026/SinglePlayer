@@ -872,7 +872,7 @@ function AuthTab(): React.ReactElement {
             )
           : (
               <div className="dshm-qr">
-                {qrLogin.img && <img src={qrLogin.img} alt="网易云登录二维码" width={148} height={148} />}
+                {qrLogin.img && qrLogin.phase !== 'success' && <img src={qrLogin.img} alt="网易云登录二维码" width={148} height={148} />}
                 <div className="dshm-note">
                   {qrLogin.phase === 'waiting' && '请用网易云音乐 App 扫码'}
                   {qrLogin.phase === 'scanned' && '已扫码，请在手机上确认'}
@@ -894,7 +894,7 @@ function AuthTab(): React.ReactElement {
             )
           : (
               <div className="dshm-qr">
-                {qqQr.img && <img src={qqQr.img} alt="QQ 登录二维码" width={148} height={148} />}
+                {qqQr.img && qqQr.phase !== 'success' && <img src={qqQr.img} alt="QQ 登录二维码" width={148} height={148} />}
                 <div className="dshm-note">
                   {qqQr.phase === 'waiting' && '请用手机 QQ 扫一扫'}
                   {qqQr.phase === 'scanned' && '已扫码，请在手机上确认'}
