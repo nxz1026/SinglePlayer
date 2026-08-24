@@ -2,6 +2,7 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](./LICENSE)
 ![dsh-plugin](https://img.shields.io/badge/dsh-plugin-7c5cff)
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 > 运行在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）内的 **AI 原生插件化音乐播放器**。
 > 聚合网易云 / QQ 音乐、逐字卡拉OK歌词、花再（HALO PIXELBAR）音箱歌词同步；DeepSeek 全程对话操控——点歌、进度音量、队列收藏、音箱场景、闹钟提醒，一个插件全包。
