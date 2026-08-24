@@ -270,7 +270,7 @@ function SettingsView(): React.ReactElement {
         />
         定时任务（闹钟 / 睡眠定时器）
       </label>
-      <label className="dshm-check-row">
+      <label className="dshm-check-row" onClick={e => { if (e.target === e.currentTarget) { const cb = e.currentTarget.querySelector('input'); if (cb) cb.click(); } }}>
         <input
           type="checkbox"
           checked={settings?.reversePushEnabled ?? false}
@@ -876,7 +876,12 @@ function AuthTab(): React.ReactElement {
   const qqQr = useQqQrLogin()
 
   const refresh = useCallback(() => {
-    void api.authStatus().then(({ providers }) => setItems(providers)).catch(() => {})
+    api.authStatus()
+      .then(({ providers }) => setItems(providers))
+      .catch(err => {
+        console.error('[AuthTab] authStatus failed:', err)
+        setItems([]) // 显式设为空数组，避免一直显示"检测中"
+      })
   }, [])
 
   useEffect(refresh, [refresh])

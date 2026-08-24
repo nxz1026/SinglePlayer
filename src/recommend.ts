@@ -65,6 +65,27 @@ export async function buildRecommendSections(): Promise<Array<{ source: string; 
 const SHUFFLE_SIZE = 36
 const FALLBACK_CHARTS = ['3778678', '19723756', '3779629', '2884035']
 
+/** 红心获取超时（毫秒），防止卡住 */
+const LIKED_TRACKS_TIMEOUT = 3000
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>
+  const timeout = new Promise<T>((resolve) => {
+    timeoutId = setTimeout(() => resolve(fallback), ms)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timeoutId!)
+  }
+}
+
+// 避免循环依赖：通过动态导入获取 cookie
+async function getNeteaseCookie(): Promise<string | undefined> {
+  const { loadAuth } = await import('./store/auth.ts')
+  return loadAuth().neteaseCookie
+}
+
 export async function buildShuffleMix(): Promise<Track[]> {
   const seen = new Set<string>()
   const pool: Track[] = []
@@ -76,19 +97,28 @@ export async function buildShuffleMix(): Promise<Track[]> {
     pool.push(track)
   }
 
+  // 1. 本地曲库（同步，极快）
   for (const list of getLists()) for (const track of list.tracks) pushUnique(track)
-  try {
-    for (const track of await netease.likedTracks(300)) pushUnique(track)
-  } catch { /* 未登录/网络失败则跳过 */ }
 
-  // 池子不足时，从公开榜单匿名补歌（无需登录）。
+  // 2. 平台红心（带超时，仅登录且缓存有效时才等待；未登录或缓存过期直接跳过）
+  const cookie = await getNeteaseCookie()
+  if (cookie) {
+    try {
+      const liked = await withTimeout(netease.likedTracks(300), LIKED_TRACKS_TIMEOUT, [] as Track[])
+      for (const track of liked) pushUnique(track)
+    } catch { /* 超时或失败直接跳过 */ }
+  }
+
+  // 3. 池子不足时，并行从公开榜单匿名补歌（无需登录）
   if (pool.length < SHUFFLE_SIZE) {
-    for (const chartId of FALLBACK_CHARTS) {
+    const needed = SHUFFLE_SIZE - pool.length
+    const chartPromises = FALLBACK_CHARTS.map(chartId =>
+      netease.chartTracksById(chartId, Math.min(30, needed)).catch(() => [] as Track[])
+    )
+    const results = await Promise.all(chartPromises)
+    for (const tracks of results) {
+      for (const track of tracks) pushUnique(track)
       if (pool.length >= SHUFFLE_SIZE) break
-      try {
-        const tracks = await netease.chartTracksById(chartId, 30)
-        for (const track of tracks) pushUnique(track)
-      } catch { /* 榜单失败时试下一个 */ }
     }
   }
 
