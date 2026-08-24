@@ -193,6 +193,10 @@ export interface HaloStatus {
   simulated: boolean
   playing: boolean
   devices: number
+  /** node-hid 加载/枚举失败原因（空串=正常）。 */
+  hidError?: string
+  /** 最近一次连接失败原因（设备未找到/打开失败）。 */
+  connectError?: string
   config?: {
     align?: string
     dynamicScroll?: boolean

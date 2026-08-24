@@ -45,18 +45,32 @@ function configPath(): string {
   return join(dataDir(), 'halo.json')
 }
 
-/** 惰性加载 node-hid（原生模块，缺失/加载失败时进入模拟模式）。 */
-function loadHid(): AnyRecord | null {
+/**
+ * 惰性加载 node-hid（原生模块）。缺失/加载失败时返回错误信息，
+ * 并实测一次枚举——旧版包装器能 require 成功但调用即抛「Could not locate the bindings file」，
+ * 不实测会把「假可用」误判为正常，导致永远找不到设备。
+ */
+function loadHid(): { hid: AnyRecord | null; error: string } {
   try {
     const require_ = createRequire(import.meta.url)
-    const hid = require_('node-hid')
-    if (hid && typeof hid.setDriverType === 'function') {
+    const hid = require_('node-hid') as AnyRecord
+    if (!hid || typeof hid.devices !== 'function' && typeof hid.enumerate !== 'function') {
+      return { hid: null, error: 'node-hid 版本异常（缺少枚举接口）' }
+    }
+    if (typeof hid.setDriverType === 'function') {
       // Windows 上切原生 HID 驱动，64 字节整包直写（首字节即报告 ID）。
       try { if (process.platform === 'win32') hid.setDriverType('windows') } catch { /* 忽略 */ }
     }
-    return hid
-  } catch {
-    return null
+    try {
+      const fn = (hid.enumerate ?? hid.devices) as () => unknown[]
+      fn.call(hid)
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause)
+      return { hid: null, error: `HID 原生模块不可用：${msg}（请重装依赖或升级 node-hid ≥3）` }
+    }
+    return { hid, error: '' }
+  } catch (cause) {
+    return { hid: null, error: `node-hid 加载失败：${cause instanceof Error ? cause.message : String(cause)}（未安装可选依赖）` }
   }
 }
 
@@ -66,6 +80,10 @@ export class HaloSync {
   private device: AnyRecord | null = null
   private connected = false
   private simulated = false
+  /** node-hid 加载/枚举层面的错误（模拟模式或枚举异常时给 UI 展示）。 */
+  private hidError = ''
+  /** 最近一次连接失败原因（设备未找到/打开失败），成功后清空。 */
+  private connectError = ''
   private playing = false
   private lastLine: string | null = null
   private notifyPinned = false
@@ -99,7 +117,11 @@ export class HaloSync {
     const prev = this.config
     this.config = { ...this.config, ...patch }
     if (patch.enabled === true) void this.connect()
-    if (patch.enabled === false) this.disconnect()
+    if (patch.enabled === false) {
+      // 取消勾选：先把音响恢复到时钟界面，再断开设备（与 dispose 同款双保险）。
+      try { this.restoreClock() } catch { /* 尽力而为 */ }
+      this.disconnect()
+    }
 
     // 已连接时让配置改动即时生效（此前只在 connect 时下发，改了没反应）。
     const screenModeChanged =
@@ -126,16 +148,21 @@ export class HaloSync {
   }
 
   listDevices(): Array<Record<string, unknown>> {
-    const hid = this.hid ?? loadHid()
-    if (!hid) return []
+    if (!this.hid) {
+      const loaded = loadHid()
+      if (loaded.hid) this.hid = loaded.hid
+      else this.hidError = loaded.error
+    }
+    if (!this.hid) return []
     try {
-      const fn = hid.enumerate ?? hid.devices
-      const list = typeof fn === 'function' ? fn.call(hid) : []
+      const fn = this.hid.enumerate ?? this.hid.devices
+      const list = typeof fn === 'function' ? fn.call(this.hid) : []
       const arr = Array.isArray(list) ? list : []
       this.devicesCacheAt = Date.now()
       this.devicesCacheCount = arr.length
-      return arr
-    } catch {
+      return arr as Array<Record<string, unknown>>
+    } catch (cause) {
+      this.hidError = `枚举 HID 失败：${cause instanceof Error ? cause.message : String(cause)}`
       return []
     }
   }
@@ -151,6 +178,8 @@ export class HaloSync {
       simulated: this.simulated,
       playing: this.playing,
       devices: this.devicesCacheCount,
+      hidError: this.hidError,
+      connectError: this.connectError,
       config: this.getConfig(),
     }
   }
@@ -183,8 +212,14 @@ export class HaloSync {
   async connect(): Promise<boolean> {
     if (!this.config.enabled) return false
     if (this.connected) return true
-    this.hid = this.hid ?? loadHid()
+    this.connectError = ''
     if (!this.hid) {
+      const loaded = loadHid()
+      if (loaded.hid) this.hid = loaded.hid
+      else this.hidError = loaded.error
+    }
+    if (!this.hid) {
+      // 无可用 node-hid：进入模拟模式（写操作空转），UI 会展示 hidError 原因。
       this.connected = true
       this.simulated = true
       return true
@@ -194,7 +229,11 @@ export class HaloSync {
       const dump = this.listDevices()
         .map(d => `${hexId(d.vendorId)}:${hexId(d.productId)} up=${d.usagePage} u=${d.usage}`)
         .join(' | ') || '(无 HID 设备)'
-      logWarn(`[halo] 未找到花再设备（USB 未连接或驱动未就绪）。已枚举 HID: ${dump}`)
+      const count = this.devicesCacheCount
+      this.connectError = count > 0
+        ? `未找到花再设备（检测到 ${count} 台 HID，但无 ${hexId(VENDOR_ID)}:${hexId(PRODUCT_ID)}）`
+        : '未找到花再设备（未枚举到任何 HID 设备）'
+      logWarn(`[halo] USB 未连接或驱动未就绪。已枚举 HID: ${dump}`)
       return false
     }
     try {
@@ -203,10 +242,12 @@ export class HaloSync {
       this.device = dev
       this.connected = true
       this.simulated = false
+      this.hidError = ''
       logInfo(`[halo] 已连接花再音箱（${hexId(VENDOR_ID)}:${hexId(PRODUCT_ID)}）`)
       this.applyScreenMode()
       return true
     } catch (cause) {
+      this.connectError = `打开花再设备失败：${cause instanceof Error ? cause.message : String(cause)}`
       logWarn(`[halo] 打开花再设备失败: ${cause instanceof Error ? cause.message : String(cause)}`)
       return false
     }
@@ -302,11 +343,11 @@ export class HaloSync {
 
   private lastConnectAttempt = 0
 
-  /** 惰性连接：未连接时限流尝试（15s），避免频繁枚举。 */
+  /** 惰性连接：未连接时限流尝试（5s），插拔后尽快自动恢复。 */
   private ensureConnected(): void {
     if (!this.config.enabled || this.connected) return
     const now = Date.now()
-    if (now - this.lastConnectAttempt < 15_000) return
+    if (now - this.lastConnectAttempt < 5_000) return
     this.lastConnectAttempt = now
     void this.connect()
   }

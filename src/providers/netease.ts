@@ -5,7 +5,7 @@
 
 import { ncm } from './ncm.ts'
 import { loadAuth, saveAuth } from '../store/auth.ts'
-import { logWarn } from '../log.ts'
+import { logInfo, logWarn } from '../log.ts'
 import type { AuthStatusItem, LyricPayload, Quality, SongUrlResult, Track } from './types.ts'
 
 type AnyRecord = Record<string, any>
@@ -169,35 +169,55 @@ function cleanCookie(segments: string[]): string {
     .join('; ')
 }
 
+/** 登录成功的判据：Cookie 中含 MUSIC_U（匿名令牌是 MUSIC_A，不算）。 */
+function hasAuthCookie(cookie: string): boolean {
+  return /(?:^|;)\s*MUSIC_U=[^;\s]/.test(cookie)
+}
+
 /**
  * 轮询扫码状态：800 过期 / 801 等待 / 802 已扫 / 803 成功。
- * 803 且尚未拿到 Cookie 时重试一次以捕获 Set-Cookie。
+ * 注意官方文档：扫码确认后本接口可能返回 502（Cookie 已随响应 Set-Cookie 下发），
+ * 因此只要捕获到含 MUSIC_U 的 Cookie 即按登录成功处理，不依赖 body.code === 803。
  */
 export async function qrCheck(key: string): Promise<
   { code: 800 | 801 | 802 | 803; message: string; nickname?: string; avatar?: string; verified?: boolean }
 > {
-  let r = await invoke<NcmResult>(lib.login_qr_check, { key, timestamp: Date.now() })
+  const once = (): Promise<NcmResult> =>
+    invoke<NcmResult>(lib.login_qr_check, { key, timestamp: Date.now() })
+
+  let r = await once()
   let code = Number(r.body?.code ?? 0)
-  // 部分部署不在首次响应回 Set-Cookie：重试一次再判定。
-  if (code === 803 && !collectCookie(r)) {
-    const retry = await invoke<NcmResult>(lib.login_qr_check, { key, timestamp: Date.now() })
-    if (collectCookie(retry)) r = retry
-    code = Number(r.body?.code ?? code)
+  let cookie = collectCookie(r)
+
+  // 首个响应不是明确的等待/过期/已扫，却没拿到登录 Cookie：
+  // 重试一次再判定（部分部署不在首次响应回 Set-Cookie；或首包为无 Cookie 的 502）。
+  if (!hasAuthCookie(cookie) && code !== 800 && code !== 801 && code !== 802) {
+    const retry = await once()
+    const retryCookie = collectCookie(retry)
+    const retryCode = Number(retry.body?.code ?? 0)
+    if (hasAuthCookie(retryCookie) || retryCode === 803 || retryCode === 502) {
+      r = retry
+      code = retryCode
+      cookie = retryCookie
+    }
   }
   const message = String(r.body?.message ?? r.body?.msg ?? '')
-  if (code !== 803) return { code: (code || 801) as 800 | 801 | 802 | 803, message }
 
-  const cookie = collectCookie(r)
-  if (!cookie) {
-    // 服务端确认登录（803），但本插件未捕获到有效 Cookie（网易部分部署不回 Set-Cookie）。
+  if (hasAuthCookie(cookie)) {
+    // 服务端已授权（无论 body.code 是 803 还是 502 等异常码）：直接保存登录态。
+    saveAuth({ neteaseCookie: cookie })
+    const ok = await verifyNeteaseCookie(cookie)
+    logInfo(`[netease] 扫码登录已保存 Cookie（body.code=${code}），nickname=${ok.nickname ?? '(核验未返回昵称)'}`)
+    return { code: 803, message: code === 502 ? '登录成功' : message || '登录成功', nickname: ok.nickname, avatar: ok.avatar, verified: true }
+  }
+  if (code === 803) {
+    // 服务端确认登录，但本插件未捕获到有效 Cookie（网易部分部署不回 Set-Cookie）。
     logWarn('[netease] 扫码 803 但未捕获到 Cookie，引导用户改用 Cookie 粘贴')
     return { code: 803, message: '登录已确认，但本插件未能自动获取 Cookie，请用账号页「Cookie 粘贴」登录', verified: false }
   }
-  // 803 即服务端已授权：直接保存登录态（信任服务端），昵称仅用于展示。
-  saveAuth({ neteaseCookie: cookie })
-  const ok = await verifyNeteaseCookie(cookie)
-  logInfo(`[netease] 扫码登录已保存 Cookie，nickname=${ok.nickname ?? '(核验未返回昵称)'}`)
-  return { code: 803, message: message || '登录成功', nickname: ok.nickname, avatar: ok.avatar, verified: true }
+  if (code === 800 || code === 802) return { code, message }
+  // 其余未知码（网络抖动等）：一律按等待处理，下个周期继续轮询。
+  return { code: 801, message }
 }
 
 /** 用 Cookie 调一次 user_account，确认其能拿到账号资料（防止存了无效登录态）。 */

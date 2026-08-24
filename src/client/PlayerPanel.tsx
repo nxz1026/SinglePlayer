@@ -471,7 +471,10 @@ function SettingsView(): React.ReactElement {
               </label>
             </>
           ) : halo?.enabled && !halo?.connected ? (
-            <div className="dshm-note">音箱未连接，请检查 USB 连接（状态：未连接）</div>
+            <div className="dshm-note">
+              音箱未连接，请检查 USB 连接
+              {(halo.hidError || halo.connectError) && <><br />原因：{halo.hidError || halo.connectError}</>}
+            </div>
           ) : null}
         </>
       )}

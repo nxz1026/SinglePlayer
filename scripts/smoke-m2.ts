@@ -5,8 +5,11 @@
 import { aggregateSearch } from '../src/providers/merge.ts'
 import * as netease from '../src/providers/netease.ts'
 import * as qq from '../src/providers/qq.ts'
+import { installBuiltinProviders } from '../src/providers/registry.ts'
 
 async function main(): Promise<void> {
+  // 聚合搜索经注册表取用音源：先安装内置源（幂等）。
+  installBuiltinProviders()
   console.log('== 1. 聚合搜索 "晴天 周杰伦" ==')
   const tracks = await aggregateSearch({ keyword: '晴天 周杰伦', limit: 4 })
   for (const t of tracks) {

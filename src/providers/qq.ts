@@ -434,6 +434,7 @@ function getSetCookie(resp: Response): string[] {
 function mergeSetCookies(merged: Map<string, string>, headers: string[]): void {
   for (const sc of headers) {
     const [kv] = sc.split(';')
+    if (!kv) continue
     const idx = kv.indexOf('=')
     if (idx <= 0) continue
     const key = kv.slice(0, idx).trim()
@@ -471,15 +472,26 @@ export interface QqQrStartResult {
 
 /** 获取 QQ 扫码二维码（返回 base64 图 + 轮询所需签名）。 */
 export async function qqQrStart(): Promise<QqQrStartResult> {
+  const xloginReferer = 'https://xui.ptlogin2.qq.com/'
   const xlogin = await fetch(
     `${QQ_XLOGIN}?appid=${QQ_APPID}&daid=${QQ_DAID}&style=33&login_text=授权并登录`
     + `&hide_title_bar=1&hide_border=1&target=self&s_url=${encodeURIComponent(QQ_JUMP)}&pt_3rd_aid=${QQ_3RD_AID}`,
     { headers: { 'User-Agent': WEB_UA } },
   )
   const ptLoginSig = getSetCookie(xlogin).map(h => /pt_login_sig=([^;]+)/.exec(h)?.[1]).find(Boolean) ?? ''
+  // 官方浏览器流程：ptqrshow 携带 xlogin 下发的 pt_login_sig Cookie 与 Referer。
+  // 缺失时二维码在 ptlogin 轮询侧仍显示「未失效」，
+  // 但手机端扫码校验走更严格的登记表，会把这种「孤儿码」判为已过期。
+  const qrCookie = ptLoginSig ? `pt_login_sig=${ptLoginSig}` : ''
   const qr = await fetch(
     `${QQ_QRSHOW}?appid=${QQ_APPID}&e=2&l=M&s=3&d=72&v=4&t=${Math.random()}&daid=${QQ_DAID}&pt_3rd_aid=${QQ_3RD_AID}`,
-    { headers: { 'User-Agent': WEB_UA } },
+    {
+      headers: {
+        'User-Agent': WEB_UA,
+        Referer: xloginReferer,
+        ...(qrCookie ? { Cookie: qrCookie } : {}),
+      },
+    },
   )
   const buf = Buffer.from(await qr.arrayBuffer())
   const qrsig = getSetCookie(qr).map(h => /qrsig=([^;]+)/.exec(h)?.[1]).find(Boolean) ?? ''
@@ -499,14 +511,22 @@ export async function qqQrCheck(qrsig: string, ptLoginSig: string): Promise<QqQr
     + `&ptredirect=0&h=1&t=1&g=1&from_ui=1&ptlang=2052&action=0-0-${Date.now()}`
     + `&js_ver=20052116&js_type=1&login_sig=${encodeURIComponent(ptLoginSig)}&pt_uistyle=40`
     + `&aid=${QQ_APPID}&daid=${QQ_DAID}&pt_3rd_aid=${QQ_3RD_AID}&has_onekey=1`
-  const resp = await fetch(url, { headers: { Referer: 'https://xui.ptlogin2.qq.com/', 'User-Agent': WEB_UA } })
+  // 轮询必须携带 qrsig Cookie（oicq/官方流程同款）；缺了部分网关会直接判失效。
+  const resp = await fetch(url, {
+    headers: {
+      Referer: 'https://xui.ptlogin2.qq.com/',
+      'User-Agent': WEB_UA,
+      Cookie: `qrsig=${qrsig}; pt_login_sig=${ptLoginSig}`,
+    },
+  })
   const text = await resp.text()
   logInfo(`[qq] qr check raw: ${text.slice(0, 240)}`)
-  // 解析 ptuiCB 状态码（0=成功，最可靠；文案随时会变，不能只靠「登录成功」字符串）。
-  const codeMatch = text.match(/ptuiCB\('(\d+)'/)
+  // 解析 ptuiCB 状态码（0=成功，65=过期，67=已扫待确认；最可靠）。
+  // 首参可能带或不带引号（ptuiCB('65',…) / ptuiCB(66,…)!），正则须两者兼容。
+  const codeMatch = text.match(/ptuiCB\(\s*'?(\d+)'?/)
   const code = codeMatch ? codeMatch[1] : ''
-  if (code === '65' || /二维码已经失效/.test(text)) return { phase: 'expired' }
-  if (code === '67' || /二维码认证中/.test(text)) return { phase: 'scanned' }
+  if (code === '65' || /二维码已经失效|已失效/.test(text)) return { phase: 'expired' }
+  if (code === '67' || /二维码认证中|等待.*确认/.test(text)) return { phase: 'scanned' }
   // 成功回调一定带跳转 URL；用 URL 兜底判定成功，文案/状态码随时会变。
   const jumpUrl = (text.match(/https?:\/\/[^\s'")]+/) ?? [])[0] ?? ''
   const uin = (text.match(/[?&]uin=([^&'")]+)/) ?? [])[1] ?? ''

@@ -101,7 +101,10 @@ function aesEncrypt(
 
 function rsaEncrypt(str: string): string {
   const buf = Buffer.from(str, 'utf8')
-  const padded = Buffer.alloc(128 - buf.length)
+  // RSA_NO_PADDING 要求输入恰为模长（1024bit → 128 字节）：
+  // 必须分配完整 128 字节缓冲、再从尾部写入数据（左补零）。
+  // 此前误写成 alloc(128 - buf.length)，偏移越界静默截断，所有 weapi 请求全部失败。
+  const padded = Buffer.alloc(128)
   buf.copy(padded, 128 - buf.length)
   const enc = publicEncrypt({ key: PUBLIC_KEY, padding: constants.RSA_NO_PADDING }, padded)
   return enc.toString('hex')
