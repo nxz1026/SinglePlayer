@@ -49,12 +49,19 @@
 
 ## 安装
 
-```powershell
-pnpm install
-pnpm build
-dsh plugin --profile web add <本仓库路径>
-# 重启 dsh web，刷新页面，右下角 ♪ 即播放器
-```
+本插件 **运行时零 npm 依赖**：网易云为原生 `weapi/eapi` 复刻（仅 `node:crypto` + `fetch`），
+框架（`@deepseek-ai/*`）由 dsh 宿主在运行时提供，不再作为 peerDependency 被 pnpm 自动安装。
+因此从 dsh 市场安装**不会再触发 symlink 权限错误（EPERM）**；`pnpm pack` 后安装实测仅装 0 个依赖。
+
+- **从 dsh 市场安装（推荐）**：在插件市场搜索 `dsh-music-huazai` 一键安装，重启 dsh web 即可。
+- **本地开发 / 手动安装**：
+
+  ```powershell
+  pnpm install
+  pnpm build
+  dsh plugin --profile web add <本仓库路径>
+  # 重启 dsh web，刷新页面，右下角 ♪ 即播放器
+  ```
 
 本地开发：仓库以 `link:` 方式接入 profile。改完代码 `pnpm build`；
 宿主半变更需重启 dsh web（可用 `scripts/dev-server.ps1` 启停），浏览器半变更刷新页面即可。
