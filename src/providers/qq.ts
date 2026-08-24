@@ -507,9 +507,10 @@ export async function qqQrCheck(qrsig: string, ptLoginSig: string): Promise<QqQr
   const code = codeMatch ? codeMatch[1] : ''
   if (code === '65' || /二维码已经失效/.test(text)) return { phase: 'expired' }
   if (code === '67' || /二维码认证中/.test(text)) return { phase: 'scanned' }
-  if (code === '0' || /登录成功/.test(text)) {
-    const jumpUrl = (text.match(/'(https:\/\/[^']+)'/g)?.[0] ?? '').replace(/^'|'$/g, '')
-    const uin = (text.match(/&uin=([^&']+)/) ?? [])[1] ?? ''
+  // 成功回调一定带跳转 URL；用 URL 兜底判定成功，文案/状态码随时会变。
+  const jumpUrl = (text.match(/https?:\/\/[^\s'")]+/) ?? [])[0] ?? ''
+  const uin = (text.match(/[?&]uin=([^&'")]+)/) ?? [])[1] ?? ''
+  if (code === '0' || /登录成功/.test(text) || jumpUrl) {
     try {
       const merged = await collectCookies(jumpUrl || 'https://y.qq.com/', uin ? `uin=${uin}` : '')
       const keys = ['uin', 'p_uin', 'p_skey', 'p_luin', 'p_lskey', 'qm_keyst', 'qqmusic_key', 'music_key', 'wxskey', 'skey', 'luin', 'lskey']

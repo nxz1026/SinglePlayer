@@ -145,11 +145,28 @@ export async function qrImage(key: string): Promise<{ img: string; url: string }
   return { img: String(d.qrimg ?? ''), url: String(d.qrurl ?? '') }
 }
 
-/** 从库响应中收集 Set-Cookie 为完整 Cookie 串。 */
+/** 从库响应中收集 Set-Cookie 为完整 Cookie 串，并剔除 Path/Expires/Domain 等属性段
+ *  （这些属性段被原样塞回后续请求 Cookie 头会导致 user_account 等接口失败）。 */
 function collectCookie(r: NcmResult): string {
   const raw = r.cookie
-  if (Array.isArray(raw)) return raw.join('; ')
-  return typeof raw === 'string' ? raw : ''
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(';') : []
+  return cleanCookie(list.map(s => s.trim()))
+}
+
+const COOKIE_ATTRS = new Set([
+  'expires', 'max-age', 'domain', 'path', 'secure', 'httponly', 'samesite', 'priority', 'partitionkey',
+])
+
+function cleanCookie(segments: string[]): string {
+  return segments
+    .map(s => s.trim())
+    .filter(s => {
+      const eq = s.indexOf('=')
+      if (eq <= 0) return false
+      const key = s.slice(0, eq).trim().toLowerCase()
+      return !COOKIE_ATTRS.has(key)
+    })
+    .join('; ')
 }
 
 /**
@@ -176,13 +193,10 @@ export async function qrCheck(key: string): Promise<
     logWarn('[netease] 扫码 803 但未捕获到 Cookie，引导用户改用 Cookie 粘贴')
     return { code: 803, message: '登录已确认，但本插件未能自动获取 Cookie，请用账号页「Cookie 粘贴」登录', verified: false }
   }
-  // 核验 Cookie 真能拿到账号，避免存了无效/过期的 MUSIC_U 后界面仍显示「未登录」。
-  const ok = await verifyNeteaseCookie(cookie)
-  if (!ok.ok) {
-    logWarn('[netease] 扫码 803 但 Cookie 核验失败，引导用户改用 Cookie 粘贴')
-    return { code: 803, message: '登录已确认，但获取到的 Cookie 无效，请用账号页「Cookie 粘贴」登录', verified: false }
-  }
+  // 803 即服务端已授权：直接保存登录态（信任服务端），昵称仅用于展示。
   saveAuth({ neteaseCookie: cookie })
+  const ok = await verifyNeteaseCookie(cookie)
+  logInfo(`[netease] 扫码登录已保存 Cookie，nickname=${ok.nickname ?? '(核验未返回昵称)'}`)
   return { code: 803, message: message || '登录成功', nickname: ok.nickname, avatar: ok.avatar, verified: true }
 }
 
