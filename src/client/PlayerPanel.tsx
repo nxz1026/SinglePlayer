@@ -382,7 +382,7 @@ function SettingsView(): React.ReactElement {
 
       <div className="dshm-set-title">
         花再音箱（HALO PixelBar）
-        <span className="dshm-set-state">{halo ? (halo.connected ? '已连接' : '未连接') : ''}</span>
+        <span className="dshm-set-state">{halo ? (halo.simulated ? '模拟模式(未装node-hid)' : halo.connected ? '已连接' : '未连接') : ''}</span>
       </div>
       <label className="dshm-check-row">
         <input
@@ -888,8 +888,9 @@ function AuthTab(): React.ReactElement {
                   {qrLogin.phase === 'waiting' && '请用网易云音乐 App 扫码'}
                   {qrLogin.phase === 'scanned' && '已扫码，请在手机上确认'}
                   {qrLogin.phase === 'starting' && '正在获取二维码…'}
-                  {qrLogin.phase === 'success' && `登录成功：${qrLogin.nickname ?? ''}`}
-                  {qrLogin.note && <><br />{qrLogin.note}</>}
+                  {qrLogin.phase === 'success' && (qrLogin.verified === false ? (qrLogin.note ?? '登录成功') : `登录成功：${qrLogin.nickname ?? ''}`)}
+                  {qrLogin.phase === 'success' && qrLogin.verified === false && <><br />账号页「Cookie 粘贴」可完成登录</>}
+                  {qrLogin.note && qrLogin.verified !== false && <><br />{qrLogin.note}</>}
                 </div>
               </div>
             )}

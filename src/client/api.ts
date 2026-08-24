@@ -52,7 +52,7 @@ export const api = {
     return get(`/auth/netease/qr/create?key=${encodeURIComponent(key)}`)
   },
   neteaseQrCheck(key: string): Promise<{
-    qr: { code: number; message: string; nickname?: string; avatar?: string }
+    qr: { code: number; message: string; nickname?: string; avatar?: string; verified?: boolean }
   }> {
     return get(`/auth/netease/qr/check?key=${encodeURIComponent(key)}`)
   },

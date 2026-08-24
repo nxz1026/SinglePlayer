@@ -5,6 +5,7 @@
 
 import { ncm } from './ncm.ts'
 import { loadAuth, saveAuth } from '../store/auth.ts'
+import { logWarn } from '../log.ts'
 import type { AuthStatusItem, LyricPayload, Quality, SongUrlResult, Track } from './types.ts'
 
 type AnyRecord = Record<string, any>
@@ -156,24 +157,45 @@ function collectCookie(r: NcmResult): string {
  * 803 且尚未拿到 Cookie 时重试一次以捕获 Set-Cookie。
  */
 export async function qrCheck(key: string): Promise<
-  { code: 800 | 801 | 802 | 803; message: string; nickname?: string; avatar?: string }
+  { code: 800 | 801 | 802 | 803; message: string; nickname?: string; avatar?: string; verified?: boolean }
 > {
-  let r = await invoke<NcmResult>(lib.login_qr_check, { key, noCookie: true, timestamp: Date.now() })
+  let r = await invoke<NcmResult>(lib.login_qr_check, { key, timestamp: Date.now() })
   let code = Number(r.body?.code ?? 0)
+  // 部分部署不在首次响应回 Set-Cookie：重试一次再判定。
   if (code === 803 && !collectCookie(r)) {
-    // noCookie 模式下部分部署不回 set-cookie，重试一次拿 Cookie。
     const retry = await invoke<NcmResult>(lib.login_qr_check, { key, timestamp: Date.now() })
-    const retryCookie = collectCookie(retry)
-    if (retryCookie) r = retry
+    if (collectCookie(retry)) r = retry
     code = Number(r.body?.code ?? code)
   }
   const message = String(r.body?.message ?? r.body?.msg ?? '')
   if (code !== 803) return { code: (code || 801) as 800 | 801 | 802 | 803, message }
 
   const cookie = collectCookie(r)
-  if (cookie) saveAuth({ neteaseCookie: cookie })
-  const profile = r.body?.profile ?? {}
-  return { code: 803, message: message || '登录成功', nickname: profile.nickname, avatar: profile.avatarUrl }
+  if (!cookie) {
+    // 服务端确认登录（803），但本插件未捕获到有效 Cookie（网易部分部署不回 Set-Cookie）。
+    logWarn('[netease] 扫码 803 但未捕获到 Cookie，引导用户改用 Cookie 粘贴')
+    return { code: 803, message: '登录已确认，但本插件未能自动获取 Cookie，请用账号页「Cookie 粘贴」登录', verified: false }
+  }
+  // 核验 Cookie 真能拿到账号，避免存了无效/过期的 MUSIC_U 后界面仍显示「未登录」。
+  const ok = await verifyNeteaseCookie(cookie)
+  if (!ok.ok) {
+    logWarn('[netease] 扫码 803 但 Cookie 核验失败，引导用户改用 Cookie 粘贴')
+    return { code: 803, message: '登录已确认，但获取到的 Cookie 无效，请用账号页「Cookie 粘贴」登录', verified: false }
+  }
+  saveAuth({ neteaseCookie: cookie })
+  return { code: 803, message: message || '登录成功', nickname: ok.nickname, avatar: ok.avatar, verified: true }
+}
+
+/** 用 Cookie 调一次 user_account，确认其能拿到账号资料（防止存了无效登录态）。 */
+async function verifyNeteaseCookie(cookie: string): Promise<{ ok: boolean; nickname?: string; avatar?: string }> {
+  try {
+    const r = await invoke<NcmResult>(lib.user_account, { cookie })
+    const profile = r.body?.profile
+    if (profile?.nickname) {
+      return { ok: true, nickname: String(profile.nickname), avatar: String(profile.avatarUrl ?? '') }
+    }
+  } catch { /* 视为无效 */ }
+  return { ok: false }
 }
 
 export async function authStatus(): Promise<AuthStatusItem> {

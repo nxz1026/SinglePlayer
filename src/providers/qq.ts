@@ -5,6 +5,7 @@
 
 import { createHash } from 'node:crypto'
 import { loadAuth, saveAuth } from '../store/auth.ts'
+import { logInfo, logWarn } from '../log.ts'
 import type { LyricPayload, Quality, SongUrlResult, Track } from './types.ts'
 
 type AnyRecord = Record<string, any>
@@ -500,32 +501,40 @@ export async function qqQrCheck(qrsig: string, ptLoginSig: string): Promise<QqQr
     + `&aid=${QQ_APPID}&daid=${QQ_DAID}&pt_3rd_aid=${QQ_3RD_AID}&has_onekey=1`
   const resp = await fetch(url, { headers: { Referer: 'https://xui.ptlogin2.qq.com/', 'User-Agent': WEB_UA } })
   const text = await resp.text()
-  if (/二维码已经失效/.test(text)) return { phase: 'expired' }
-  if (/二维码认证中/.test(text)) return { phase: 'scanned' }
-  if (!/登录成功/.test(text)) return { phase: 'waiting' }
-  const jumpUrl = (text.match(/'(https:\/\/[^']+)'/g)?.[0] ?? '').replace(/^'|'$/g, '')
-  const uin = (text.match(/&uin=([^&']+)/) ?? [])[1] ?? ''
-  try {
-    const merged = await collectCookies(jumpUrl || 'https://y.qq.com/', uin ? `uin=${uin}` : '')
-    const keys = ['uin', 'p_uin', 'p_skey', 'p_luin', 'p_lskey', 'qm_keyst', 'qqmusic_key', 'music_key', 'wxskey', 'skey', 'luin', 'lskey']
-    const cookie = keys.filter(k => merged.has(k)).map(k => `${k}=${merged.get(k)}`).join('; ')
-    const hasMusicKey = merged.has('qm_keyst') || merged.has('music_key') || merged.has('qqmusic_key')
-    // 已有更完整的 Cookie（含音乐凭证）时不覆盖，避免扫码基础态把会员权益冲掉。
-    const existing = loadAuth().qqCookie
-    const existingHasKey = /(?:qm_keyst|music_key|qqmusic_key)=/.test(existing)
-    if (hasMusicKey || !existingHasKey) {
-      saveAuth({ qqCookie: cookie })
-      return {
-        phase: 'success',
-        note: hasMusicKey
-          ? '已获取 QQ 音乐登录凭证'
-          : '已扫码登录（基础态）；VIP 曲目若无法播放，请在账号页粘贴完整 Cookie',
+  logInfo(`[qq] qr check raw: ${text.slice(0, 240)}`)
+  // 解析 ptuiCB 状态码（0=成功，最可靠；文案随时会变，不能只靠「登录成功」字符串）。
+  const codeMatch = text.match(/ptuiCB\('(\d+)'/)
+  const code = codeMatch ? codeMatch[1] : ''
+  if (code === '65' || /二维码已经失效/.test(text)) return { phase: 'expired' }
+  if (code === '67' || /二维码认证中/.test(text)) return { phase: 'scanned' }
+  if (code === '0' || /登录成功/.test(text)) {
+    const jumpUrl = (text.match(/'(https:\/\/[^']+)'/g)?.[0] ?? '').replace(/^'|'$/g, '')
+    const uin = (text.match(/&uin=([^&']+)/) ?? [])[1] ?? ''
+    try {
+      const merged = await collectCookies(jumpUrl || 'https://y.qq.com/', uin ? `uin=${uin}` : '')
+      const keys = ['uin', 'p_uin', 'p_skey', 'p_luin', 'p_lskey', 'qm_keyst', 'qqmusic_key', 'music_key', 'wxskey', 'skey', 'luin', 'lskey']
+      const cookie = keys.filter(k => merged.has(k)).map(k => `${k}=${merged.get(k)}`).join('; ')
+      const hasMusicKey = merged.has('qm_keyst') || merged.has('music_key') || merged.has('qqmusic_key')
+      // 已有更完整的 Cookie（含音乐凭证）时不覆盖，避免扫码基础态把会员权益冲掉。
+      const existing = loadAuth().qqCookie
+      const existingHasKey = /(?:qm_keyst|music_key|qqmusic_key)=/.test(existing)
+      if (hasMusicKey || !existingHasKey) {
+        saveAuth({ qqCookie: cookie })
+        return {
+          phase: 'success',
+          note: hasMusicKey
+            ? '已获取 QQ 音乐登录凭证'
+            : '已扫码登录（基础态）；VIP 曲目若无法播放，请在账号页粘贴完整 Cookie',
+        }
       }
+      return { phase: 'success', note: '扫码仅获基础登录态，已保留原有完整 Cookie（会员权益不受影响）' }
+    } catch (cause) {
+      logWarn(`[qq] 扫码成功但换取凭证异常：${cause instanceof Error ? cause.message : String(cause)}`)
+      // 手机已确认登录：即便凭证换取失败也不要卡死，提示用户用粘贴 Cookie 补全。
+      return { phase: 'success', note: '扫码已确认，但换取 QQ 音乐凭证失败，请在账号页粘贴完整 Cookie' }
     }
-    return { phase: 'success', note: '扫码仅获基础登录态，已保留原有完整 Cookie（会员权益不受影响）' }
-  } catch {
-    return { phase: 'error', note: '扫码成功但换取凭证失败，请改用粘贴 Cookie' }
   }
+  return { phase: 'waiting' }
 }
 
 // ---------------------------------------------------------------- Provider 契约

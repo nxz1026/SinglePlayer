@@ -13,6 +13,7 @@ export interface QrLoginState {
   img?: string
   nickname?: string
   note?: string
+  verified?: boolean
 }
 
 let state: QrLoginState = { phase: 'idle' }
@@ -110,7 +111,7 @@ async function poll(): Promise<void> {
       set({ phase: 'scanned' })
     } else if (qr.code === 803) {
       clearTimer()
-      set({ phase: 'success', nickname: qr.nickname, note: undefined })
+      set({ phase: 'success', nickname: qr.nickname, note: qr.note, verified: qr.verified })
     } else if (qr.code === 800) {
       renewals += 1
       if (renewals <= MAX_RENEWALS) void begin()
