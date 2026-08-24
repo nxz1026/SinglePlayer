@@ -8,7 +8,11 @@ import * as netease from './providers/netease.ts'
 import { trackKey, type Track } from './providers/types.ts'
 import { getLists } from './store/library.ts'
 
-/** 推荐分组：每日推荐（登录）+ 热歌榜兜底。 */
+/**
+ * 推荐分组：每日推荐（登录）+ 热歌榜兜底
+ * - 登录用户：每日个性化推荐 + 按日期种子从所有榜单中随机轮换 ×2（当天稳定、跨天变化）
+ * - 未登录用户：按日期种子从所有榜单中随机轮换 ×2
+ */
 export async function buildRecommendSections(): Promise<Array<{ source: string; title: string; tracks: Track[] }>> {
   const sections: Array<{ source: string; title: string; tracks: Track[] }> = []
 
@@ -17,6 +21,36 @@ export async function buildRecommendSections(): Promise<Array<{ source: string; 
     if (daily.length) sections.push({ source: 'netease-daily', title: '每日推荐', tracks: daily.slice(0, 30) })
   } catch { /* 尽力而为 */ }
 
+  // 获取所有榜单，按日期种子随机选 2 个（当天固定、跨天变化）
+  try {
+    const toplist = await netease.toplist()
+    if (toplist.length) {
+      // 日期种子：YYYYMMDD → 数字
+      const dateSeed = new Date()
+      const seed = dateSeed.getFullYear() * 10000 + (dateSeed.getMonth() + 1) * 100 + dateSeed.getDate()
+      // Fisher-Yates 洗牌（确定性种子版本）
+      const shuffled = [...toplist]
+      let randState = seed
+      const rand = () => {
+        randState = (randState * 1664525 + 1013904223) >>> 0
+        return randState / 0x100000000
+      }
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1))
+        ;[shuffled[i], shuffled[j]] = [shuffled[j] as { id: string; name: string }, shuffled[i] as { id: string; name: string }]
+      }
+      // 取前 2 个
+      const picked = shuffled.slice(0, 2)
+      for (const chart of picked) {
+        const tracks = await netease.chartTracksById(chart.id, 30).catch(() => [] as Track[])
+        if (tracks.length) {
+          sections.push({ source: `chart-${chart.id}`, title: chart.name, tracks })
+        }
+      }
+    }
+  } catch { /* 尽力而为 */ }
+
+  // 兜底：如果以上都没拿到，用固定热歌榜
   if (!sections.length) {
     const tracks = await netease.chartTracksById('3778678', 30).catch(() => [] as Track[])
     if (tracks.length) sections.push({ source: 'chart-3778678', title: '热歌榜', tracks })

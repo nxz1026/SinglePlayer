@@ -84,7 +84,8 @@ export function Surface({ open, onClose, anchor }: {
   /** 悬浮球位置：面板跟随其展开。 */
   anchor?: FabPos
 }): React.ReactElement | null {
-  const [tab, setTab] = useState<'search' | 'library' | 'queue' | 'auth' | 'settings'>('search')
+const [tab, setTab] = useState<'search' | 'library' | 'queue' | 'auth' | 'settings'>('search')
+  const queueLength = usePlayer(s => s.queue.length)
   if (!open) return null
   return (
     <div className="dshm-panel" style={anchor ? panelStyleFor(anchor) : undefined}>
@@ -111,7 +112,7 @@ export function Surface({ open, onClose, anchor }: {
           <button type="button" className={tab === 'search' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('search')}>搜索</button>
           <button type="button" className={tab === 'library' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('library')}>曲库</button>
           <button type="button" className={tab === 'queue' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('queue')}>
-            队列{getPlayerState().queue.length > 0 ? `(${getPlayerState().queue.length})` : ''}
+            队列{queueLength > 0 ? `(${queueLength})` : ''}
           </button>
           <button type="button" className={tab === 'auth' ? 'dshm-tab dshm-tab-on' : 'dshm-tab'} onClick={() => setTab('auth')}>账号</button>
         </div>
@@ -636,7 +637,7 @@ function Row({ track, children, onRemove }: {
     <div className={active ? 'dshm-item dshm-item-active' : 'dshm-item'}>
       <button type="button" className="dshm-item-main" onClick={() => playTrack(track)}>
         <span className={`dshm-badge dshm-badge-${track.provider}`}>
-          {track.provider === 'netease' ? '网' : 'Q'}
+          {track.provider === 'netease' ? '网' : track.provider === 'qq' ? 'Q' : '酷'}
         </span>
         <span className="dshm-item-texts">
           <span className="dshm-item-name">
@@ -920,18 +921,24 @@ function AuthTab(): React.ReactElement {
         </div>
         {qqQr.phase === 'idle' || qqQr.phase === 'given-up'
           ? (
-              <button type="button" className="dshm-btn" onClick={startQqQrLogin}>扫码登录</button>
+              <button type="button" className="dshm-btn" onClick={startQqQrLogin} title="实验性功能：依赖腾讯 ptlogin 接口，随时可能失效；建议改用下方 Cookie 粘贴">扫码登录（实验性）</button>
             )
           : (
               <div className="dshm-qr">
                 {qqQr.img && qqQr.phase !== 'success' && <img src={qqQr.img} alt="QQ 登录二维码" width={148} height={148} />}
                 <div className="dshm-note">
-                  {qqQr.phase === 'waiting' && '请用手机 QQ 扫一扫'}
-                  {qqQr.phase === 'scanned' && '已扫码，请在手机上确认'}
+                  {(qqQr.phase === 'waiting' || qqQr.phase === 'scanned') && (
+                    <>
+                      {qqQr.phase === 'waiting' && '请用手机 QQ 扫一扫'}
+                      {qqQr.phase === 'scanned' && '已扫码，请在手机上确认'}
+                      <br />
+                      <span style={{fontSize: '11px', opacity: 0.7}}>实验性功能，易失效；推荐用下方 Cookie 粘贴</span>
+                    </>
+                  )}
                   {qqQr.phase === 'starting' && '正在获取二维码…'}
                   {qqQr.phase === 'success' && (qqQr.note ?? '登录成功')}
                   {qqQr.phase === 'error' && (qqQr.note ?? '扫码失败')}
-                  {qqQr.note && qqQr.phase !== 'success' && <><br />{qqQr.note}</>}
+                  {qqQr.note && qqQr.phase !== 'success' && qqQr.phase !== 'waiting' && qqQr.phase !== 'scanned' && <><br />{qqQr.note}</>}
                 </div>
               </div>
             )}

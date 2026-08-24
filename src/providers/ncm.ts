@@ -392,7 +392,7 @@ export const recommend_songs = (query: any) =>
   createRequest('/api/v3/discovery/recommend/songs', {}, createOption(query, 'weapi'))
 
 export const like = (query: any) => {
-  const liked = query.like === 'false' ? false : true
+  const liked = query.like === false ? false : true
   const data = { alg: 'itembased', trackId: query.id, like: liked, time: '3' }
   return createRequest('/api/radio/like', data, createOption(query, 'weapi'))
 }

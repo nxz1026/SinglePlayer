@@ -1,0 +1,8 @@
+fix: address all code review issues
+
+P1: fix netease like cancel (boolean compare), provider disable persistence, audio proxy host allowlist
+P2: recommend date-seed chart rotation x2, extract route helpers, playSerial increment on stop/clearQueue, reactive queue badge, kugou badge fix
+P3: remove unused trackKey import, karaoke rAF on-demand, scheduler catch-up for sleep/hang
+P4: QQ QR login marked experimental
+
+build artifacts updated

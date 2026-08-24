@@ -439,6 +439,7 @@ export function removeFromQueue(index: number): void {
 
 export function clearQueue(): void {
   stop()
+  playSerial += 1
   set({ queue: [], index: -1 })
 }
 
@@ -478,6 +479,7 @@ export function stop(): void {
   audio.pause()
   audio.removeAttribute('src')
   currentTrackId = ''
+  playSerial += 1
   set({ playing: false, currentTime: 0, duration: 0, lyric: { lrc: '', tlyric: '', yrc: '', roma: '' } })
 }
 

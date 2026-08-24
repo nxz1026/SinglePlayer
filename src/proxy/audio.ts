@@ -1,9 +1,21 @@
 /**
  * 统一音频代理 —— /api/dsh-music/audio?url=<encoded>
  * 转发 Range、按上游 host 注入 Referer，流式回传。
+ * 仅允许播放源域名（网易云、QQ），防 SSRF/开放代理。
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+
+/** 允许代理的音频源 host 后缀白名单（仅播放源：网易云、QQ）。 */
+export const ALLOWED_AUDIO_HOSTS = [
+  'music.126.net',
+  'qq.com',
+] as const
+
+/** 判断 host 是否在允许白名单内。 */
+export function isAllowedAudioHost(host: string): boolean {
+  return ALLOWED_AUDIO_HOSTS.some(allowed => host.endsWith(allowed))
+}
 
 /** 上游音频请求头（对齐 Mineradio audioProxyHeadersFor 的关键面）。 */
 export function upstreamHeadersFor(url: string, range: string | undefined): Record<string, string> {
@@ -40,6 +52,11 @@ export async function proxyAudio(req: IncomingMessage, res: ServerResponse, rawU
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') {
     res.writeHead(400).end('bad protocol')
+    return
+  }
+  // 仅允许播放源域名，防 SSRF/开放代理
+  if (!isAllowedAudioHost(target.host)) {
+    res.writeHead(403).end('forbidden: host not allowed')
     return
   }
   try {

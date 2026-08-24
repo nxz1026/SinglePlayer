@@ -77,21 +77,19 @@ function persistEnabled(): void {
 }
 
 /**
- * 注册内置音源（netease / qq）并应用设置里的启用集。
+ * 注册内置音源（netease / qq / kugou）并应用设置里的启用集。
  * 应在插件启动时调用一次（幂等）。
  */
 export function installBuiltinProviders(): void {
   registerProvider(neteaseProvider)
   registerProvider(qqProvider)
   registerProvider(kugouProvider)
-  // 若设置里已有启用集，则按设置覆盖默认全开；新增的内置源默认启用。
+  // 若设置里已有启用集，则按设置覆盖默认全开；未初始化时默认全开。
   const saved = loadEnabledProviderIds()
   if (saved.length) {
     const savedSet = new Set(saved)
     for (const id of allProviderIds()) {
-      if (savedSet.has(id)) setEnabled(id, true)
-      else if ((KNOWN_PROVIDERS as readonly string[]).includes(id)) setEnabled(id, true)
-      else setEnabled(id, false)
+      setEnabled(id, savedSet.has(id))
     }
   }
   // 修复：把当前启用集同步写回设置，使 settings.enabledProviders 与运行时

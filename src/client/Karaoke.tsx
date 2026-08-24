@@ -148,9 +148,37 @@ export function Karaoke(): React.ReactElement | null {
       if (current && current.text) drawLine(current, index, now, cssH / 2, 1, payload.source === 'yrc-word')
     }
 
-    const tick = (): void => { render(); raf = requestAnimationFrame(tick) }
-    tick()
-    return () => cancelAnimationFrame(raf)
+    let tick: (() => void) | null = null
+
+    function startTick(): void {
+      if (tick) return
+      tick = (): void => { render(); raf = requestAnimationFrame(tick!) }
+      tick()
+    }
+
+    function stopTick(): void {
+      if (!tick) return
+      cancelAnimationFrame(raf)
+      tick = null
+    }
+
+    // 仅在播放中且有歌词行时运行 rAF
+    if (playing && payload.lines.length > 0) {
+      startTick()
+    }
+
+    // 依赖变化时重新评估是否需要运行
+    const handlePlayingChange = () => {
+      if (playing && payload.lines.length > 0) startTick()
+      else stopTick()
+    }
+
+    // 监听 playing 状态变化（通过依赖数组中的 playing 触发重新运行 effect）
+    // 但我们也需要在 payload.lines 变化时处理
+
+    return () => {
+      stopTick()
+    }
   }, [payload, playing])
 
   if (!lyric.lrc && !lyric.yrc) return null

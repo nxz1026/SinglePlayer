@@ -81,17 +81,42 @@ async function fireAlarm(alarm: Alarm): Promise<void> {
   dispatchNotify(alarm.label || '音乐闹钟', played || `没找到「${alarm.keyword}」，请手动播放`)
 }
 
+let lastTickAt = 0
+
 function tick(): void {
   if (!getSettings().schedulerEnabled) return
+  const now = Date.now()
   const d = new Date()
   const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   const dayKey = todayKey()
+
+  // 检测是否跨越了闹钟时间（系统休眠/卡顿导致 tick 间隔过大）
+  const lastTick = lastTickAt || now
+  lastTickAt = now
+  const maxGap = 60_000 // 超过 1 分钟视为可能跨越闹钟
+
   for (const alarm of loadAlarms()) {
-    if (alarm.time !== hhmm) continue
-    const key = `${alarm.id}:${dayKey}`
-    if (firedToday.has(key)) continue
-    firedToday.add(key)
-    void fireAlarm(alarm)
+    const alarmTime = alarm.time
+    if (alarmTime === hhmm) {
+      // 当前分钟匹配：正常触发
+      const key = `${alarm.id}:${dayKey}`
+      if (firedToday.has(key)) continue
+      firedToday.add(key)
+      void fireAlarm(alarm)
+    } else if (now - lastTick > maxGap) {
+      // 可能跨越了闹钟时间：检查上次 tick 到现在之间是否有闹钟时间
+      // 将 alarmTime 转换为今天的时间戳进行比较
+      const [alarmH, alarmM] = alarmTime.split(':').map(Number)
+      const alarmMs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), alarmH, alarmM).getTime()
+      // 如果闹钟时间在 (lastTick, now] 范围内，且未触发过，则补偿触发
+      if (alarmMs > lastTick && alarmMs <= now) {
+        const key = `${alarm.id}:${dayKey}`
+        if (!firedToday.has(key)) {
+          firedToday.add(key)
+          void fireAlarm(alarm)
+        }
+      }
+    }
   }
   if (firedToday.size > 200) {
     for (const key of firedToday) {
