@@ -1,5 +1,0 @@
-docs: update README with changelog and recent fixes summary
-
-- Added v0.1.0 changelog section
-- Updated features list with new fixes: audio.load() for reliable track switching, 
-  authStatus error handling, checkbox onClick, parallel charts, likedTracks timeout
