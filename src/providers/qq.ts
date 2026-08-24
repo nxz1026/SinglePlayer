@@ -510,13 +510,19 @@ export async function qqQrCheck(qrsig: string, ptLoginSig: string): Promise<QqQr
     const keys = ['uin', 'p_uin', 'p_skey', 'p_luin', 'p_lskey', 'qm_keyst', 'qqmusic_key', 'music_key', 'wxskey', 'skey', 'luin', 'lskey']
     const cookie = keys.filter(k => merged.has(k)).map(k => `${k}=${merged.get(k)}`).join('; ')
     const hasMusicKey = merged.has('qm_keyst') || merged.has('music_key') || merged.has('qqmusic_key')
-    saveAuth({ qqCookie: cookie })
-    return {
-      phase: 'success',
-      note: hasMusicKey
-        ? '已获取 QQ 音乐登录凭证'
-        : '已扫码登录（基础态）；VIP 曲目若无法播放，请在账号页粘贴完整 Cookie',
+    // 已有更完整的 Cookie（含音乐凭证）时不覆盖，避免扫码基础态把会员权益冲掉。
+    const existing = loadAuth().qqCookie
+    const existingHasKey = /(?:qm_keyst|music_key|qqmusic_key)=/.test(existing)
+    if (hasMusicKey || !existingHasKey) {
+      saveAuth({ qqCookie: cookie })
+      return {
+        phase: 'success',
+        note: hasMusicKey
+          ? '已获取 QQ 音乐登录凭证'
+          : '已扫码登录（基础态）；VIP 曲目若无法播放，请在账号页粘贴完整 Cookie',
+      }
     }
+    return { phase: 'success', note: '扫码仅获基础登录态，已保留原有完整 Cookie（会员权益不受影响）' }
   } catch {
     return { phase: 'error', note: '扫码成功但换取凭证失败，请改用粘贴 Cookie' }
   }
