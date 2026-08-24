@@ -43,6 +43,10 @@
 - **跨平台音源回退**：取流失败自动降级音质 → 跨平台同名同歌手换源 → 队列跳歌（20s 预算 + token 防竞态，骨架移植自 Mineradio provider-fallback）
 - **设置面板**：音质偏好、「通知与定时」四开关 + 自定义提示音上传、闹钟/睡眠定时可视化配置、花再同步开关与显示参数（对齐/滚动/每行字数/通知时长/暂停时钟）
 - **可插拔音源架构**：`MusicProvider` 合同 + `ProviderRegistry`（对标 HaloLyricSync factory.py）。新增平台只需在 `providers/<x>.ts` 实现合同、`installBuiltinProviders()` 注册一次，`routes/tools/merge` 自动适配，无需改动消费方
+- **通知测试入口**：设置页可一键触发 `POST /api/dsh-music/notify` 验证双通道（声音 + 音箱文字）
+- **切歌可靠性**：音频元素 `load()` 强制重载，彻底解决「选了新歌仍播旧歌」
+- **随便听听加速**：备选榜单并行请求、红心获取 3s 超时兜底、未登录直接跳过
+- **登录状态修复**：authStatus 错误显式兜底，不再卡在"检测中"
   - **用户侧音源管理**：设置面板「音乐源」分组可实时启停各平台（`GET /providers` + `POST /providers/toggle`），状态持久化；停用后聚合搜索仅走启用源
   - **酷狗音源（搜索发现）**：`providers/kugou.ts` 实现 `MusicProvider` 合同、零依赖直连移动端搜索，作为首个新增第三方源；其播放接口需签名/dfid，轻量手段取不到直链，故仅作搜索扩源，点播回退至网易云/QQ
 - **不重复造轮子**：平台 API 层、卡拉OK算法、音源回退骨架均自 Mineradio 移植改造；插件机制完全复用 dsh Cordis 体系
@@ -183,3 +187,26 @@ pnpm exec tsx scripts/diag-halo-sync.ts   # 花再全链路：加载→连接→
 > This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3 of the License. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 >
 > Contains code ported from [Mineradio](https://github.com/XxHuberrr/Mineradio) (MIT License).
+
+## 更新日志
+
+### v0.1.0 (2026-08-24)
+
+**修复**
+- 网易云红心「取消收藏」失效（布尔值与字符串比较 bug）
+- 内置音源停用状态不持久化（重启后强制重新启用）
+- 音频代理 SSRF 防护（仅允许 qq.com / music.126.net）
+- 切歌未生效（新增 `audio.load()` 强制重载音频源）
+- 登录状态卡在"检测中"（authStatus 错误显式兜底）
+- 设置页反向推送复选框不可点击（label 添加 onClick 触发 checkbox）
+- 推荐区日期种子轮换所有榜单 ×2（当天固定、跨天变化）
+- 随便听听响应慢（备选榜单并行请求、红心获取 3s 超时兜底、未登录直接跳过）
+- 队列徽标改为响应式订阅（实时更新数字）
+- 酷狗曲目显示正确图标"酷"
+- 闹钟调度抗卡顿/睡眠补偿（检测跨越分钟并补触发）
+- Karaoke rAF 按需运行（仅播放中且有歌词时渲染）
+- QQ 扫码登录标注"实验性/最佳努力"
+
+**优化**
+- 抽取公共路由辅助函数到 `src/routes/helpers.ts`（去重 5 个函数）
+- 删除无用导入 `trackKey`
