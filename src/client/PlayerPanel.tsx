@@ -391,8 +391,19 @@ function SettingsView(): React.ReactElement {
           disabled={!halo}
           onChange={event => patchHalo({ enabled: event.target.checked })}
         />
-        启用歌词同步
-      </label>
+          启用歌词同步
+        </label>
+        <button
+          type="button"
+          className="dshm-mini"
+          disabled={!halo?.enabled}
+          onClick={() => {
+            void api.haloLyric('花再歌词同步测试 123').then(() => {
+              setSavedNote('已发送测试歌词到音响')
+              window.setTimeout(() => setSavedNote(''), 1500)
+            })
+          }}
+        >发送测试歌词</button>
       <label className="dshm-check-row">
         <input
           type="checkbox"
