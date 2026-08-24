@@ -34,24 +34,8 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "NeteaseCloudMusicApi": "^4.32.0"
-  },
-  "optionalDependencies": {
-    "node-hid": "^3.4.0"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.0-rc.8",
-    "@deepseek-ai/dsh-llm": ">=0.1.1-rc.1"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/cordis": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-llm": {
-      "optional": true
-    }
-  },
+  "dependencies": {},
+  "optionalDependencies": {},
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-client-runtime": "^0.1.1-rc.1",
@@ -61,6 +45,7 @@
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "playwright": "^1.62.1",
+    "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",

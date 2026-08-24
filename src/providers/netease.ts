@@ -1,16 +1,16 @@
 ﻿/**
- * 网易云音乐 Provider —— 基于 NeteaseCloudMusicApi 包（进程内函数调用），
- * 调用约定对齐 Mineradio server.js：cloudsearch / song_url_v1 / lyric_new / login_qr_*。
+ * 网易云音乐 Provider —— 原生实现（src/providers/ncm.ts，零运行时依赖）。
+ * 调用约定与 NeteaseCloudMusicApi 对齐：cloudsearch / song_url_v1 / lyric_new / login_qr_*。
  */
 
-import ncmPackage from 'NeteaseCloudMusicApi'
+import { ncm } from './ncm.ts'
 import { loadAuth, saveAuth } from '../store/auth.ts'
 import type { AuthStatusItem, LyricPayload, Quality, SongUrlResult, Track } from './types.ts'
 
 type AnyRecord = Record<string, any>
 
-/** 包为 CJS 动态导出，取默认导出后按名解构。 */
-const lib = ncmPackage as unknown as Record<string, unknown>
+/** 原生模块导出形态：{ status, body, cookie }，直接按名解构。 */
+const lib = ncm as unknown as Record<string, unknown>
 
 /** 库的 TS 类型偏窄（timestamp/noCookie 运行时合法），统一走宽松调用。 */
 function invoke<T = AnyRecord>(fn: unknown, params: AnyRecord): Promise<T> {
@@ -311,7 +311,7 @@ import type { MusicProvider } from './types.ts'
 export const neteaseProvider: MusicProvider = {
   id: 'netease',
   label: '网易云音乐',
-  description: '基于 NeteaseCloudMusicApi（进程内直连）',
+  description: '原生实现（零依赖，weapi/eapi 直连）',
   search,
   songUrl: (id, quality) => songUrl(id, quality),
   lyric,

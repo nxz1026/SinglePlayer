@@ -32,7 +32,7 @@
   - **音箱文字置顶**：通知默认置顶常驻，直到手动消除（`/halo/notify/dismiss`）或切歌；也可设为 N 秒自动让位歌词，暂停状态下到点回时钟
 - **定时任务**：设置页可视化配置——音乐闹钟（时间+关键词+备注，随时增删）与睡眠定时器（分钟数启停+倒计时）；每日到点搜歌开播并做双通道提醒，持久化本地；总开关一键停用
 - **反向推送**：切歌事件以折叠通知写入最近活跃的会话动态（不唤醒模型、零 token）；需至少一个已打开的对话，开关可控
-  - **聚合搜索**：网易云（NeteaseCloudMusicApi）+ QQ 音乐（fcg 直连 + sha1 签名，移植自 Mineradio）+ 酷狗（移动端搜索直连，仅搜索发现、播放受限）；关键词历史与最近结果跨开关保留
+  - **聚合搜索**：网易云（原生 weapi/eapi 复刻，零依赖）+ QQ 音乐（fcg 直连 + sha1 签名，移植自 Mineradio）+ 酷狗（移动端搜索直连，仅搜索发现、播放受限）；关键词历史与最近结果跨开关保留
 - **逐字卡拉OK**：YRC/QRC 词级时间轴解析 + Canvas2D 双色填充染色；单行精简模式适配窄界面；界面歌词可一键开关（关闭不影响音箱同步）
 - **登录收藏**：网易云扫码登录、QQ Cookie 粘贴；本地 ❤ 与平台红心**双向同步**
 - **随便听听**：一键生成「曲库+平台红心 Top30（按播放次数）+ 6 首随机新歌」的打乱歌单并开播
@@ -154,7 +154,7 @@ pnpm exec tsx scripts/smoke-m6.ts   # 花再协议：包构建/校验/emoji清�
 - **[Mineradio](https://github.com/XxHuberrr/Mineradio)** — 本项目大量源代码移植自它：平台 API 层（QQ fcg 签名直连、聚合搜索）、逐字卡拉OK同步算法（YRC/QRC 解析、词级插值）、花再音箱桥接（halo-sync 模式与 HID 协议）。感谢原作者的出色工作。
 - [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) — Cordis 插件体系与 Web UI 插槽
 - [HaloLyricSync](https://github.com/nxz1026/HaloLyricSync) / [HaloPixelToolBox](https://github.com/XFEstudio/HaloPixelToolBox) / Seraph310/halo-pixelbar-mcp — 花再 HID 协议
-- [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) — 网易云接口封装
+- [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) — 网易云 weapi/eapi 协议参考（本项目已原生复刻其加密与请求约定，零运行时依赖）
 
 ## 开源许可
 

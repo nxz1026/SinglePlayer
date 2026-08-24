@@ -29,6 +29,12 @@ const lib: UserConfig = {
   target: 'es2024',
   fixedExtension: false,
   dts: false,
+  // 宿主框架由 dsh 运行时提供，必须外部化（deps.neverBundle → 不打包），
+  // 其余（含 qrcode）一律打包进 lib，保证运行时零 npm 依赖。
+  deps: {
+    neverBundle: specifier => /^@deepseek-ai\//.test(specifier),
+    alwaysBundle: specifier => !/^@deepseek-ai\//.test(specifier),
+  },
 }
 
 const client: UserConfig = {
