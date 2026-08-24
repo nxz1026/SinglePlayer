@@ -10,13 +10,12 @@ $RECYCLE.BIN/
 *.suo
 *.user
 
-# Build
+# Build（lib/ 除外：市场走 github: 源安装，必须提交构建产物，见 README）
 bin/
 obj/
 build/
 dist/
 out/
-/lib/
 
 # Node
 node_modules/
