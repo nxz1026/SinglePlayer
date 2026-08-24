@@ -29,6 +29,7 @@ export const CSS = `
 .dshm-go { width:38px; border:none; border-radius:10px; background:linear-gradient(135deg,#7c5cff,#38bdf8); color:#fff; cursor:pointer; font-weight:700; }
 .dshm-clear { width:30px; border:1px solid rgba(255,255,255,.12); border-radius:10px; background:rgba(255,255,255,.07); color:#cfd3e6; cursor:pointer; font-size:12px; }
 .dshm-clear:hover { border-color:#7c5cff; color:#fff; }
+.dshm-charts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
 .dshm-list { display:flex; flex-direction:column; gap:2px; }
 .dshm-item { display:flex; align-items:center; gap:4px; border-radius:10px; }
 .dshm-item:hover { background:rgba(255,255,255,.06); }

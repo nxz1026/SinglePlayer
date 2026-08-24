@@ -472,6 +472,14 @@ function saveHistory(keyword: string): string[] {
   return history
 }
 
+/** 快捷榜单（公开榜单，匿名可用，无需登录）。 */
+const CHART_SHORTCUTS = [
+  { id: '3778678', title: '热歌榜' },
+  { id: '19723756', title: '飙升榜' },
+  { id: '3779629', title: '新歌榜' },
+  { id: '2884035', title: '抖音榜' },
+]
+
 function SearchTab(): React.ReactElement {
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState<Track[]>([])
@@ -529,16 +537,21 @@ function SearchTab(): React.ReactElement {
           void startRandomMix().finally(() => setMixing(false))
         }}
       >{mixing ? '正在生成…' : '🎲 随便听听'}</button>
-      <button
-        type="button"
-        className="dshm-lucky"
-        disabled={charting}
-        title="热门榜单，无需登录一键播放"
-        onClick={() => {
-          setCharting(true)
-          void startChartMix().finally(() => setCharting(false))
-        }}
-      >{charting ? '正在加载…' : '🔥 热歌榜'}</button>
+      <div className="dshm-charts">
+        {CHART_SHORTCUTS.map(chart => (
+          <button
+            key={chart.id}
+            type="button"
+            className="dshm-chip-hist"
+            disabled={charting}
+            title={`播放${chart.title}（无需登录）`}
+            onClick={() => {
+              setCharting(true)
+              void startChartMix(chart.id, chart.title).finally(() => setCharting(false))
+            }}
+          >{charting ? '…' : chart.title}</button>
+        ))}
+      </div>
       {history.length > 0 && (
         <div className="dshm-history">
           {history.map(item => (
