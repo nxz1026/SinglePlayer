@@ -1,0 +1,4 @@
+fix: 切歌未生效 - commitPlay 增加 audio.load() 强制重载音频源
+
+切歌时 audio.src 赋值后未调用 load()，浏览器可能继续播放旧音频缓存。
+新增 audio.load() 确保音频元素正确重置并加载新源。

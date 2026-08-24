@@ -261,8 +261,9 @@ async function fetchAndCommit(track: Track, opts: PlayOpts, myToken: number): Pr
 
 function commitPlay(track: Track, url: string): void {
   currentTrackId = track.id
-  audio.pause() // 切歌前先停旧歌，避免旧音频残留造成双声
+  audio.pause()
   audio.src = audioProxyUrl(url)
+  audio.load() // 强制重新加载音频源，确保切歌生效
   audio.play().catch(() => set({ error: '浏览器阻止了自动播放，请再点一次' }))
   set({ loadingUrl: false })
   api.recordPlay(track)
