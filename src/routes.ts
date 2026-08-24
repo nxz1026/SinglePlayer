@@ -6,6 +6,7 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { logError, logInfo, logWarn } from './log.ts'
 import { proxyAudio } from './proxy/audio.ts'
 import * as netease from './providers/netease.ts'
+import * as qq from './providers/qq.ts'
 import { aggregateSearch } from './providers/merge.ts'
 import { allProviderIds, getProvider, hasProvider, isEnabled, listProviders, enabledProviderIds, setEnabled } from './providers/registry.ts'
 import { drainCommands, nowPlayingSnapshot, pushCommand, reportNowPlaying } from './bridge.ts'
@@ -170,6 +171,17 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       if (!cookie.toLowerCase().includes('uin=')) throw new Error('Cookie 需包含 uin=（从 y.qq.com 复制）')
       saveAuth({ qqCookie: cookie })
       return { saved: true }
+    }),
+
+    // ---- QQ 扫码登录（腾讯 ptlogin 二维码，最佳努力）----
+    post(`${API_PREFIX}/auth/qq/qr`, async () => {
+      const { qrsig, ptLoginSig, img } = await qq.qqQrStart()
+      return { qrsig, ptLoginSig, img }
+    }),
+    get(`${API_PREFIX}/auth/qq/qr/check`, async query => {
+      const qrsig = query.get('qrsig') ?? ''
+      const ptLoginSig = query.get('ptLoginSig') ?? ''
+      return { qr: await qq.qqQrCheck(qrsig, ptLoginSig) }
     }),
     get(`${API_PREFIX}/auth/status`, async () => {
       const providers = await Promise.all(listProviders().map(p => p.authStatus()))

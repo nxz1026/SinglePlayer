@@ -8,6 +8,7 @@ import { FAB_SIZE } from './Fab.tsx'
 import { api } from './api.ts'
 import { Karaoke } from './Karaoke.tsx'
 import { startQrLogin, useQrLogin } from './qrLogin.ts'
+import { startQqQrLogin, useQqQrLogin } from './qqQrLogin.ts'
 import {
   addToQueue,
   clearQueue,
@@ -841,6 +842,7 @@ function AuthTab(): React.ReactElement {
   const [qqCookieText, setQqCookieText] = useState('')
   const [note, setNote] = useState('')
   const qrLogin = useQrLogin()
+  const qqQr = useQqQrLogin()
 
   const refresh = useCallback(() => {
     void api.authStatus().then(({ providers }) => setItems(providers)).catch(() => {})
@@ -850,11 +852,11 @@ function AuthTab(): React.ReactElement {
 
   // 登录成功后刷新账号状态
   useEffect(() => {
-    if (qrLogin.phase === 'success') {
+    if (qrLogin.phase === 'success' || qqQr.phase === 'success') {
       refresh()
       setNote('')
     }
-  }, [qrLogin.phase, refresh])
+  }, [qrLogin.phase, qqQr.phase, refresh])
 
   return (
     <div className="dshm-auth">
@@ -885,6 +887,23 @@ function AuthTab(): React.ReactElement {
           QQ 音乐
           <StatusChip item={items.find(i => i.provider === 'qq')} />
         </div>
+        {qqQr.phase === 'idle' || qqQr.phase === 'given-up'
+          ? (
+              <button type="button" className="dshm-btn" onClick={startQqQrLogin}>扫码登录</button>
+            )
+          : (
+              <div className="dshm-qr">
+                {qqQr.img && <img src={qqQr.img} alt="QQ 登录二维码" width={148} height={148} />}
+                <div className="dshm-note">
+                  {qqQr.phase === 'waiting' && '请用手机 QQ 扫一扫'}
+                  {qqQr.phase === 'scanned' && '已扫码，请在手机上确认'}
+                  {qqQr.phase === 'starting' && '正在获取二维码…'}
+                  {qqQr.phase === 'success' && (qqQr.note ?? '登录成功')}
+                  {qqQr.phase === 'error' && (qqQr.note ?? '扫码失败')}
+                  {qqQr.note && qqQr.phase !== 'success' && <><br />{qqQr.note}</>}
+                </div>
+              </div>
+            )}
         <textarea
           className="dshm-textarea"
           rows={3}

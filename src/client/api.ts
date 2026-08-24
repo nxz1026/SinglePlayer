@@ -59,6 +59,12 @@ export const api = {
   qqCookieSave(cookie: string): Promise<{ saved: boolean }> {
     return post('/auth/qq', { cookie })
   },
+  qqQrStart(): Promise<{ qrsig: string; ptLoginSig: string; img: string }> {
+    return post('/auth/qq/qr', {})
+  },
+  qqQrCheck(qrsig: string, ptLoginSig: string): Promise<{ qr: { phase: string; note?: string } }> {
+    return get(`/auth/qq/qr/check?qrsig=${encodeURIComponent(qrsig)}&ptLoginSig=${encodeURIComponent(ptLoginSig)}`)
+  },
   neteaseLike(songId: string, like: boolean): Promise<{ liked: boolean }> {
     return post('/like/set', { id: `netease:${songId}`, liked: like })
   },

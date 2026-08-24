@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { loadAuth } from '../store/auth.ts'
+import { loadAuth, saveAuth } from '../store/auth.ts'
 import type { LyricPayload, Quality, SongUrlResult, Track } from './types.ts'
 
 type AnyRecord = Record<string, any>
@@ -69,7 +69,7 @@ function authCookie(): { text: string; cookie: Record<string, string>; uin: stri
     : (cookie.uin ?? cookie.qqmusic_uin ?? cookie.wxuin ?? cookie.p_uin)
   const digits = String(rawUin ?? '').replace(/\D/g, '')
   const uin = digits.replace(/^0+/, '') || digits || '0'
-  const key = cookie.qm_keyst ?? cookie.qqmusic_key ?? cookie.music_key ?? cookie.wxskey ?? ''
+  const key = cookie.qm_keyst ?? cookie.qqmusic_key ?? cookie.music_key ?? cookie.wxskey ?? cookie.p_skey ?? ''
   return { text, cookie, uin, key }
 }
 
@@ -404,6 +404,122 @@ export function extractQQUin(cookieText: string): string {
     if ((key === 'uin' || key === 'wxuin' || key === 'p_uin') && rest.join('=')) return rest.join('=')
   }
   return ''
+}
+
+// ---------------------------------------------------------------- 扫码登录（腾讯 ptlogin，最佳努力）
+
+const QQ_XLOGIN = 'https://xui.ptlogin2.qq.com/cgi-bin/xlogin'
+const QQ_QRSHOW = 'https://ssl.ptlogin2.qq.com/ptqrshow'
+const QQ_QRLOGIN = 'https://ssl.ptlogin2.qq.com/ptqrlogin'
+const QQ_APPID = '716027609'
+const QQ_DAID = '383'
+const QQ_3RD_AID = '100497308'
+const QQ_JUMP = 'https://graph.qq.com/oauth2.0/login_jump'
+
+/** qrsig → ptqrtoken（腾讯 hash33）。 */
+function hash33(qrsig: string): number {
+  let e = 0
+  for (let i = 0; i < qrsig.length; i++) e = (e + ((e << 5) + qrsig.charCodeAt(i))) | 0
+  return 2147483647 & e
+}
+
+function getSetCookie(resp: Response): string[] {
+  const raw = (resp.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.()
+  if (Array.isArray(raw)) return raw
+  const single = resp.headers.get('set-cookie')
+  return single ? single.split(/,(?=[^ ]+?=)/).map(s => s.trim()) : []
+}
+
+function mergeSetCookies(merged: Map<string, string>, headers: string[]): void {
+  for (const sc of headers) {
+    const [kv] = sc.split(';')
+    const idx = kv.indexOf('=')
+    if (idx <= 0) continue
+    const key = kv.slice(0, idx).trim()
+    if (!key) continue
+    let value = kv.slice(idx + 1).trim()
+    try { value = decodeURIComponent(value) } catch { /* 保持原文 */ }
+    merged.set(key, value)
+  }
+}
+
+/** 手动跟随重定向，收集整条链路上所有 set-cookie（undici 默认只给最后一跳）。 */
+async function collectCookies(startUrl: string, seedCookie: string): Promise<Map<string, string>> {
+  const merged = new Map<string, string>()
+  for (const [k, v] of Object.entries(parseCookieString(seedCookie))) merged.set(k, v)
+  const cookieHeader = (): string => [...merged].map(([k, v]) => `${k}=${v}`).join('; ')
+  let url = startUrl
+  for (let i = 0; i < 6; i++) {
+    const resp = await fetch(url, {
+      headers: { Cookie: cookieHeader(), 'User-Agent': WEB_UA, Referer: 'https://y.qq.com/' },
+      redirect: 'manual',
+    })
+    mergeSetCookies(merged, getSetCookie(resp))
+    const loc = resp.headers.get('location')
+    if (!loc || resp.status < 300 || resp.status >= 400) break
+    url = new URL(loc, url).href
+  }
+  return merged
+}
+
+export interface QqQrStartResult {
+  qrsig: string
+  ptLoginSig: string
+  img: string
+}
+
+/** 获取 QQ 扫码二维码（返回 base64 图 + 轮询所需签名）。 */
+export async function qqQrStart(): Promise<QqQrStartResult> {
+  const xlogin = await fetch(
+    `${QQ_XLOGIN}?appid=${QQ_APPID}&daid=${QQ_DAID}&style=33&login_text=授权并登录`
+    + `&hide_title_bar=1&hide_border=1&target=self&s_url=${encodeURIComponent(QQ_JUMP)}&pt_3rd_aid=${QQ_3RD_AID}`,
+    { headers: { 'User-Agent': WEB_UA } },
+  )
+  const ptLoginSig = getSetCookie(xlogin).map(h => /pt_login_sig=([^;]+)/.exec(h)?.[1]).find(Boolean) ?? ''
+  const qr = await fetch(
+    `${QQ_QRSHOW}?appid=${QQ_APPID}&e=2&l=M&s=3&d=72&v=4&t=${Math.random()}&daid=${QQ_DAID}&pt_3rd_aid=${QQ_3RD_AID}`,
+    { headers: { 'User-Agent': WEB_UA } },
+  )
+  const buf = Buffer.from(await qr.arrayBuffer())
+  const qrsig = getSetCookie(qr).map(h => /qrsig=([^;]+)/.exec(h)?.[1]).find(Boolean) ?? ''
+  return { qrsig, ptLoginSig, img: `data:image/png;base64,${buf.toString('base64')}` }
+}
+
+export interface QqQrCheckResult {
+  phase: 'waiting' | 'scanned' | 'expired' | 'success' | 'error'
+  note?: string
+}
+
+/** 轮询扫码状态；成功则换取 QQ 音乐凭证并落库。 */
+export async function qqQrCheck(qrsig: string, ptLoginSig: string): Promise<QqQrCheckResult> {
+  if (!qrsig || !ptLoginSig) return { phase: 'error', note: '缺少二维码参数，请重新获取' }
+  const ptqrtoken = hash33(qrsig)
+  const url = `${QQ_QRLOGIN}?u1=${encodeURIComponent(QQ_JUMP)}&ptqrtoken=${ptqrtoken}`
+    + `&ptredirect=0&h=1&t=1&g=1&from_ui=1&ptlang=2052&action=0-0-${Date.now()}`
+    + `&js_ver=20052116&js_type=1&login_sig=${encodeURIComponent(ptLoginSig)}&pt_uistyle=40`
+    + `&aid=${QQ_APPID}&daid=${QQ_DAID}&pt_3rd_aid=${QQ_3RD_AID}&has_onekey=1`
+  const resp = await fetch(url, { headers: { Referer: 'https://xui.ptlogin2.qq.com/', 'User-Agent': WEB_UA } })
+  const text = await resp.text()
+  if (/二维码已经失效/.test(text)) return { phase: 'expired' }
+  if (/二维码认证中/.test(text)) return { phase: 'scanned' }
+  if (!/登录成功/.test(text)) return { phase: 'waiting' }
+  const jumpUrl = (text.match(/'(https:\/\/[^']+)'/g)?.[0] ?? '').replace(/^'|'$/g, '')
+  const uin = (text.match(/&uin=([^&']+)/) ?? [])[1] ?? ''
+  try {
+    const merged = await collectCookies(jumpUrl || 'https://y.qq.com/', uin ? `uin=${uin}` : '')
+    const keys = ['uin', 'p_uin', 'p_skey', 'p_luin', 'p_lskey', 'qm_keyst', 'qqmusic_key', 'music_key', 'wxskey', 'skey', 'luin', 'lskey']
+    const cookie = keys.filter(k => merged.has(k)).map(k => `${k}=${merged.get(k)}`).join('; ')
+    const hasMusicKey = merged.has('qm_keyst') || merged.has('music_key') || merged.has('qqmusic_key')
+    saveAuth({ qqCookie: cookie })
+    return {
+      phase: 'success',
+      note: hasMusicKey
+        ? '已获取 QQ 音乐登录凭证'
+        : '已扫码登录（基础态）；VIP 曲目若无法播放，请在账号页粘贴完整 Cookie',
+    }
+  } catch {
+    return { phase: 'error', note: '扫码成功但换取凭证失败，请改用粘贴 Cookie' }
+  }
 }
 
 // ---------------------------------------------------------------- Provider 契约
