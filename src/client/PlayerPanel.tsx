@@ -133,7 +133,6 @@ const [tab, setTab] = useState<'search' | 'library' | 'queue' | 'auth' | 'settin
 
 function SettingsView(): React.ReactElement {
   const [quality, setQuality] = useState(getQualityPref())
-  const [halo, setHalo] = useState<import('./api.ts').HaloStatus | null>(null)
   const [settings, setSettings] = useState<import('./api.ts').PluginSettings | null>(null)
   const [providers, setProviders] = useState<import('./api.ts').ProviderInfo[]>([])
   const [schedule, setSchedule] = useState<import('./api.ts').ScheduleStatus | null>(null)
@@ -144,34 +143,16 @@ function SettingsView(): React.ReactElement {
   const [sleepMinutes, setSleepMinutes] = useState(30)
   const soundFileRef = useRef<HTMLInputElement>(null)
   const [soundInfo, setSoundInfo] = useState<Awaited<ReturnType<typeof api.notifySoundInfo>> | null>(null)
-  const [haloOpen, setHaloOpen] = useState(true)
 
   useEffect(() => {
-    const loadHalo = () => { void api.haloStatus().then(({ halo }) => setHalo(halo)).catch(() => {}) }
-    loadHalo()
-    const haloTimer = window.setInterval(loadHalo, 2000)
     void api.getPluginSettings().then(({ settings }) => setSettings(settings)).catch(() => {})
     void api.listProviders().then(({ providers }) => setProviders(providers)).catch(() => {})
     void refreshSchedule()
     void api.notifySoundInfo().then(setSoundInfo).catch(() => {})
-    return () => window.clearInterval(haloTimer)
   }, [])
 
   const refreshSchedule = useCallback(() =>
     api.scheduleStatus().then(setSchedule).catch(() => {}), [])
-
-  const patchHalo = useCallback((patch: Record<string, unknown>) => {
-    // 保存后重新拉取完整 status：顶层 enabled / connected 才会同步更新
-    // （此前只合并 config 子对象，导致「启用歌词同步」勾选框永远弹回）。
-    void api.haloSetConfig(patch)
-      .then(() => api.haloStatus())
-      .then(({ halo }) => {
-        setHalo(halo)
-        setSavedNote('已保存')
-        window.setTimeout(() => setSavedNote(''), 1500)
-      })
-      .catch(cause => setSavedNote(cause instanceof Error ? cause.message : String(cause)))
-  }, [])
 
   const patchSwitches = useCallback((patch: Partial<import('./api.ts').PluginSettings>) => {
     void api.savePluginSettings(patch).then(({ settings }) => {
@@ -223,8 +204,6 @@ function SettingsView(): React.ReactElement {
       .catch(noteError)
   }, [noteError])
 
-  const config = halo?.config
-
   return (
     <div className="dshm-settings">
       <div className="dshm-set-title">音质偏好</div>
@@ -251,16 +230,6 @@ function SettingsView(): React.ReactElement {
           onChange={event => patchSwitches({ notifySound: event.target.checked })}
         />
         声音提示音（浏览器）
-      </label>
-      <label className="dshm-check-row">
-        <input
-          type="checkbox"
-          checked={settings?.notifyHaloText ?? true}
-          disabled={settings ? !halo?.enabled : false}
-          title="依赖花再音箱连接"
-          onChange={event => patchSwitches({ notifyHaloText: event.target.checked })}
-        />
-        音箱文字提醒{halo?.connected ? '' : '（花再未连接）'}
       </label>
       <label className="dshm-check-row">
         <input
@@ -385,100 +354,6 @@ function SettingsView(): React.ReactElement {
         </>
       )}
 
-      <div
-        className="dshm-set-title"
-        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-        onClick={() => setHaloOpen(o => !o)}
-      >
-        <span>
-          花再音箱（HALO PixelBar）
-          <span className="dshm-set-state">{halo ? (halo.simulated ? '模拟模式(未装node-hid)' : halo.connected ? '已连接' : '未连接') : ''}</span>
-        </span>
-        <span>{haloOpen ? '▾' : '▸'}</span>
-      </div>
-      {haloOpen && (
-        <>
-          <label className="dshm-check-row">
-            <input
-              type="checkbox"
-              checked={halo?.enabled ?? false}
-              disabled={!halo}
-              onChange={event => patchHalo({ enabled: event.target.checked })}
-            />
-            启用歌词同步
-          </label>
-          {halo?.enabled && halo?.connected ? (
-            <>
-              <button
-                type="button"
-                className="dshm-mini"
-                onClick={() => {
-                  void api.haloLyric('花再歌词同步测试 123').then(() => {
-                    setSavedNote('已发送测试歌词到音响')
-                    window.setTimeout(() => setSavedNote(''), 1500)
-                  })
-                }}
-              >发送测试歌词</button>
-              <label className="dshm-check-row">
-                <input
-                  type="checkbox"
-                  checked={config?.dynamicScroll ?? false}
-                  onChange={event => patchHalo({ dynamicScroll: event.target.checked })}
-                />
-                动态滚动歌词（长句右→左）
-              </label>
-              <label className="dshm-check-row">
-                <input
-                  type="checkbox"
-                  checked={config?.idleClockWhenPaused ?? true}
-                  onChange={event => patchHalo({ idleClockWhenPaused: event.target.checked })}
-                />
-                暂停时显示时钟
-              </label>
-              <label className="dshm-set-row">
-                歌词对齐
-                <select
-                  className="dshm-select"
-                  value={config?.align ?? 'center'}
-                  onChange={event => patchHalo({ align: event.target.value })}
-                >
-                  <option value="left">左</option>
-                  <option value="center">中</option>
-                  <option value="right">右</option>
-                </select>
-              </label>
-              <label className="dshm-set-row">
-                每行字数
-                <input
-                  className="dshm-num"
-                  type="number"
-                  min={10}
-                  max={40}
-                  value={config?.maxCharsPerLine ?? 32}
-                  onChange={event => patchHalo({ maxCharsPerLine: Number(event.target.value) || 32 })}
-                />
-              </label>
-              <label className="dshm-set-row">
-                通知时长(秒)
-                <input
-                  className="dshm-num dshm-time"
-                  type="number"
-                  min={0}
-                  max={120}
-                  value={config?.notifyDurationSec ?? 0}
-                  title="音箱文字提醒的停留时长；0 = 置顶，直到手动消除或切歌"
-                  onChange={event => patchHalo({ notifyDurationSec: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })}
-                />
-              </label>
-            </>
-          ) : halo?.enabled && !halo?.connected ? (
-            <div className="dshm-note">
-              音箱未连接，请检查 USB 连接
-              {(halo.hidError || halo.connectError) && <><br />原因：{halo.hidError || halo.connectError}</>}
-            </div>
-          ) : null}
-        </>
-      )}
       {savedNote && <div className="dshm-note dshm-note-ok">{savedNote}</div>}
     </div>
   )

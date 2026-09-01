@@ -1,4 +1,4 @@
-/** 通用路由辅助函数 —— 供 routes.ts 与 halo/routes.ts 共用。 */
+/** 通用路由辅助函数 —— 供 routes.ts 共用。 */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 

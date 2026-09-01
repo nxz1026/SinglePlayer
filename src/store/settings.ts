@@ -1,8 +1,6 @@
 /**
  * 插件设置 —— 通知 / 定时任务 / 反向推送开关。
- * 声音通知与音箱文字提醒是两条独立通道：
- * - notifySound：浏览器半播放提示音（Web Audio，无需任何硬件）
- * - notifyHaloText：花再音箱屏幕文字（依赖设备连接）
+ * 声音通知：浏览器半播放提示音（Web Audio，无需任何硬件）。
  * 持久化于 $DSH_HOME/dsh-music-huazai/settings.json。
  */
 
@@ -13,8 +11,6 @@ import { dataDir } from './auth.ts'
 export interface PluginSettings {
   /** 声音通知（浏览器提示音）。 */
   notifySound: boolean
-  /** 音箱文字提醒（依赖花再音箱）。 */
-  notifyHaloText: boolean
   /** 定时任务总开关（闹钟 / 睡眠定时器）。 */
   schedulerEnabled: boolean
   /** 反向推送（切歌等事件写入会话动态）。 */
@@ -25,7 +21,6 @@ export interface PluginSettings {
 
 const DEFAULTS: PluginSettings = {
   notifySound: true,
-  notifyHaloText: true,
   schedulerEnabled: true,
   reversePushEnabled: false,
   enabledProviders: [],
@@ -53,7 +48,6 @@ function load(): PluginSettings {
       const raw = JSON.parse(readFileSync(file(), 'utf8')) as Partial<PluginSettings>
       cache = {
         notifySound: bool(raw.notifySound, DEFAULTS.notifySound),
-        notifyHaloText: bool(raw.notifyHaloText, DEFAULTS.notifyHaloText),
         schedulerEnabled: bool(raw.schedulerEnabled, DEFAULTS.schedulerEnabled),
         reversePushEnabled: bool(raw.reversePushEnabled, DEFAULTS.reversePushEnabled),
         enabledProviders: strArray(raw.enabledProviders) ?? [...DEFAULTS.enabledProviders],
@@ -73,7 +67,6 @@ export function patchSettings(patch: Partial<PluginSettings>): PluginSettings {
   const current = load()
   const next: PluginSettings = {
     notifySound: bool(patch.notifySound, current.notifySound),
-    notifyHaloText: bool(patch.notifyHaloText, current.notifyHaloText),
     schedulerEnabled: bool(patch.schedulerEnabled, current.schedulerEnabled),
     reversePushEnabled: bool(patch.reversePushEnabled, current.reversePushEnabled),
     enabledProviders: strArray(patch.enabledProviders) ?? current.enabledProviders,

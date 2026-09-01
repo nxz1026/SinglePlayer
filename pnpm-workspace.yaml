@@ -1,6 +1,6 @@
 allowBuilds:
   esbuild: true
-  node-hid: true
+  node-hid: set this to true or false
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent-default-model@0.1.1-rc.1'
   - '@deepseek-ai/dsh-agent-presets@0.1.1-rc.1'

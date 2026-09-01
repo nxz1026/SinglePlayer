@@ -12,7 +12,6 @@ import type { BridgeCommand, NowPlayingReport } from './providers/types.ts'
 import { aggregateSearch } from './providers/merge.ts'
 import { getProvider } from './providers/registry.ts'
 import type { ProviderId, Track } from './providers/types.ts'
-import { getHaloSync } from './halo/sync.ts'
 import { getSettings } from './store/settings.ts'
 import type { PlayModeId } from './providers/types.ts'
 import { addAlarm, cancelSleepTimer, listAlarms, removeAlarm, startSleepTimer } from './scheduler.ts'
@@ -190,48 +189,7 @@ export function registerTools(ctx: Context): () => void {
     },
   }))
 
-  // ---- 扩展工具：音箱控制 / 队列 / 音量 / 收藏 / 定时任务 / 通知 ----
-
-  reg(defineTool({
-    name: 'music_halo',
-    description: '控制花再(HALO PixelBar)音箱屏幕：scene 内置场景 / spectrum 频谱样式 / clock 时钟样式 / color 屏幕颜色。需已在插件设置开启「启用歌词同步」。',
-    parameters: {
-      action: { type: 'string', required: true, description: 'scene | spectrum | clock | color' },
-      value: { type: 'string', description: 'scene: clock/game/work/reading/cats/dogs/memes/cyber/waves；spectrum: 1-4；clock: 1-11；color: #rrggbb 或 r,g,b' },
-    },
-    output: {
-      schema: { type: 'json' },
-      render: (_args, value) => [{ type: 'text', text: String((value as Record<string, unknown>).message ?? '') }],
-    },
-    async execute(args) {
-      const halo = getHaloSync()
-      if ((halo.status() as { connected?: boolean }).connected !== true) {
-        throw new Error('花再音箱未连接：请先在插件设置中启用歌词同步')
-      }
-      const action = String(args.action ?? '').toLowerCase().trim()
-      const raw = String(args.value ?? '').trim()
-      let ok = false
-      let detail = ''
-      if (action === 'scene') {
-        ok = halo.sendScene(raw.toLowerCase())
-        detail = `场景 ${raw}`
-      } else if (action === 'spectrum') {
-        ok = halo.sendSpectrum(Number(raw) || 0)
-        detail = `频谱样式 ${raw}`
-      } else if (action === 'clock') {
-        ok = halo.sendClock(Number(raw) || 1)
-        detail = `时钟样式 ${raw}`
-      } else if (action === 'color') {
-        const rgb = parseRgb(raw)
-        if (!rgb) throw new Error('颜色格式应为 #rrggbb 或 r,g,b，如 #3366ff 或 51,102,255')
-        ok = halo.sendScreenColor(rgb.r, rgb.g, rgb.b)
-        detail = `屏色 rgb(${rgb.r},${rgb.g},${rgb.b})`
-      } else {
-        throw new Error(`bad action: ${args.action}`)
-      }
-      return { message: ok ? `已下发：${detail}` : `${detail} 下发失败（设备可能离线）` }
-    },
-  }))
+  // ---- 扩展工具：队列 / 音量 / 收藏 / 定时任务 / 通知 ----
 
   reg(defineTool({
     name: 'music_queue',
@@ -385,20 +343,6 @@ const PLAY_MODE_LABEL: Record<PlayModeId, string> = {
   repeat: '列表循环',
   one: '单曲循环',
   random: '随机播放',
-}
-
-/** 解析 #rrggbb 或 r,g,b 颜色。 */
-function parseRgb(text: string): { r: number; g: number; b: number } | undefined {
-  const hex = /^#?([0-9a-f]{6})$/i.exec(text.trim())
-  if (hex?.[1]) {
-    const n = parseInt(hex[1], 16)
-    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
-  }
-  const parts = text.split(',').map(part => Number(part.trim()))
-  if (parts.length === 3 && parts.every(v => Number.isFinite(v))) {
-    return { r: parts[0]!, g: parts[1]!, b: parts[2]! }
-  }
-  return undefined
 }
 
 /** 定时任务类工具的开关门卫。 */

@@ -1,7 +1,7 @@
 {
   "name": "dsh-music-huazai",
   "version": "0.1.0",
-  "description": "单身汉（DSH）播放器 —— 运行在 DeepSeek Harness 内的插件化音乐播放器：聚合网易/QQ 平台、逐字卡拉OK歌词、花再(HALO PIXELBAR)音箱歌词同步",
+  "description": "单身汉（DSH）播放器 —— 运行在 DeepSeek Harness 内的插件化音乐播放器：聚合网易/QQ 平台、逐字卡拉OK歌词",
   "type": "module",
   "license": "GPL-3.0-only",
   "engines": {
@@ -33,9 +33,6 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit"
-  },
-  "optionalDependencies": {
-    "node-hid": "^3.4.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

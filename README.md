@@ -5,7 +5,7 @@
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 > 运行在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）内的 **AI 原生插件化音乐播放器**。
-> 聚合网易云 / QQ 音乐、逐字卡拉OK歌词、花再（HALO PIXELBAR）音箱歌词同步；DeepSeek 全程对话操控——点歌、进度音量、队列收藏、音箱场景、闹钟提醒，一个插件全包。
+> 聚合网易云 / QQ 音乐、逐字卡拉OK歌词；DeepSeek 全程对话操控——点歌、进度音量、队列收藏、闹钟提醒，一个插件全包。
 
 架构设计与里程碑详见 [PLAN.md](./PLAN.md)。
 
@@ -18,32 +18,29 @@
 │  宿主半  Cordis 插件（dsh 进程内，Node）                   │
 │  · 平台 BFF（网易 NCM / QQ fcg 签名直连 / 酷狗移动端搜索）                  │
 │  · 音频代理（Range + Referer 注入）                        │
-│  · AI 工具集 ×12 · 定时调度 · 通知分发                      │
-│  · 花再 HID 驱动 ──USB──▶ 音箱（歌词/时钟/场景/频谱）        │
+│  · AI 工具集 ×11 · 定时调度 · 通知分发                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## 特性
 
 - **标准 dsh bundle**：一个 npm 包同时含宿主半（Cordis 插件）与浏览器半（React UI），`dsh plugin add` 即装即用；工具经 dsh tools 服务注册，模型自动发现调用
-- **AI 原生 ×12 工具**：对话「放一首晴天」「下一首」「音量调到40%」「把稻香加进队列」「明早7点半放歌叫我起床」「30分钟后暂停」「换个赛博朋克场景」——搜索、播放、进度、音量、队列、收藏、睡眠定时、音乐闹钟、音箱屏控全部可说
-- **通知双通道**：声音提示音与花再音箱文字提醒**相互独立**，各自开关；任何外部系统可 `POST /notify` 触发
+- **AI 原生 ×11 工具**：对话「放一首晴天」「下一首」「音量调到40%」「把稻香加进队列」「明早7点半放歌叫我起床」「30分钟后暂停」——搜索、播放、进度、音量、队列、收藏、睡眠定时、音乐闹钟全部可说
+- **通知**：声音提示音（受 settings.notifySound 控制）；任何外部系统可 `POST /notify` 触发
   - **自定义提示音**：设置页上传 mp3/wav/ogg/m4a/flac（服务端魔数校验防伪装，≤3MB），可一键恢复内置「叮咚」
-  - **音箱文字置顶**：通知默认置顶常驻，直到手动消除（`/halo/notify/dismiss`）或切歌；也可设为 N 秒自动让位歌词，暂停状态下到点回时钟
 - **定时任务**：设置页可视化配置——音乐闹钟（时间+关键词+备注，随时增删）与睡眠定时器（分钟数启停+倒计时）；每日到点搜歌开播并做双通道提醒，持久化本地；总开关一键停用
 - **反向推送**：切歌事件以折叠通知写入最近活跃的会话动态（不唤醒模型、零 token）；需至少一个已打开的对话，开关可控
   - **聚合搜索**：网易云（原生 weapi/eapi 复刻，零依赖）+ QQ 音乐（fcg 直连 + sha1 签名，移植自 Mineradio）+ 酷狗（移动端搜索直连，仅搜索发现、播放受限）；关键词历史与最近结果跨开关保留
-- **逐字卡拉OK**：YRC/QRC 词级时间轴解析 + Canvas2D 双色填充染色；单行精简模式适配窄界面；界面歌词可一键开关（关闭不影响音箱同步）
+- **逐字卡拉OK**：YRC/QRC 词级时间轴解析 + Canvas2D 双色填充染色；单行精简模式适配窄界面；界面歌词可一键开关
 - **登录收藏**：网易云 / QQ 扫码登录（二维码过期自动换新；扫码确认返回 502 带 Cookie 时也按成功处理）、QQ Cookie 粘贴兜底；本地 ❤ 与平台红心**双向同步**
 - **随便听听**：一键生成「曲库+平台红心 Top30（按播放次数）+ 6 首随机新歌」的打乱歌单并开播
 - **推荐**：曲库页多分组——登录时「每日个性化推荐」+ 官方榜单随机轮换 ×2（日期种子，每天新鲜、当天稳定）；未登录同样有随机榜单组
 - **曲库多列表**：本地红心 / 自定义列表 / 最近播放，支持导入导出 JSON 备份，数据存 `$DSH_HOME` 纯本地
-- **花再同步**：USB HID 驱动 HALO PIXELBAR 音箱实时显示歌词（换行推送、切歌信息、暂停回时钟）；配置改动即时下发；取消勾选同步或退出时自动恢复时钟界面；node-hid 加载失败/设备未找到等原因直接显示在设置页
 - **四种播放模式**：顺序 / 列表循环 / 单曲循环 / 随机
 - **跨平台音源回退**：取流失败自动降级音质 → 跨平台同名同歌手换源 → 队列跳歌（20s 预算 + token 防竞态，骨架移植自 Mineradio provider-fallback）
-- **设置面板**：音质偏好、「通知与定时」四开关 + 自定义提示音上传、闹钟/睡眠定时可视化配置、花再同步开关与显示参数（对齐/滚动/每行字数/通知时长/暂停时钟）
+- **设置面板**：音质偏好、「通知与定时」开关 + 自定义提示音上传、闹钟/睡眠定时可视化配置
 - **可插拔音源架构**：`MusicProvider` 合同 + `ProviderRegistry`（对标 HaloLyricSync factory.py）。新增平台只需在 `providers/<x>.ts` 实现合同、`installBuiltinProviders()` 注册一次，`routes/tools/merge` 自动适配，无需改动消费方
-- **通知测试入口**：设置页可一键触发 `POST /api/dsh-music/notify` 验证双通道（声音 + 音箱文字）
+- **通知测试入口**：设置页可一键触发 `POST /api/dsh-music/notify` 验证声音提示音
 - **切歌可靠性**：音频元素 `load()` 强制重载，彻底解决「选了新歌仍播旧歌」
 - **随便听听加速**：备选榜单并行请求、红心获取 3s 超时兜底、未登录直接跳过
 - **登录状态修复**：authStatus 错误显式兜底，不再卡在"检测中"
@@ -80,9 +77,7 @@
    - 「放一首周杰伦的晴天」「下一首」「现在放的什么」「跳到1分30秒」
    - 「把稻香加进队列，然后单曲循环」「音量调到40%」「收藏这首歌」
    - 「明早7点半放首轻音乐叫我起床」「30分钟后暂停」（睡眠定时）
-   - 「音箱换个赛博朋克场景」「显示频谱样式2」「屏色改成 #3366ff」
-6. **花再同步**：音箱 USB 连接电脑后，在设置面板开启「启用歌词同步」（默认关闭）；取消勾选或退出/停服时自动恢复时钟界面
-7. **备份**：曲库「导出」下载全部列表 JSON，「导入」恢复
+6. **备份**：曲库「导出」下载全部列表 JSON，「导入」恢复
 
 ## AI 工具
 
@@ -96,13 +91,12 @@
 | `music_queue` | 队列：add 加入（不打断当前）/ clear 清空 / mode 播放模式 |
 | `music_volume` | 音量 0-100 |
 | `music_favorite` | 当前歌收藏/取消本地红心（可自动切换） |
-| `music_halo` | 音箱屏幕：scene 场景 / spectrum 频谱 / clock 时钟样式 / color 屏色 |
 | `music_sleep_timer` | 睡眠定时器：N 分钟后自动暂停并提醒 |
 | `music_alarm` | 音乐闹钟：每日 HH:mm 搜歌开播 + 双通道提醒 |
 | `music_now_playing` | 当前曲目与进度 |
 | `music_lyric` | 歌词文本（LRC） |
 
-> 通知入口：`POST /api/dsh-music/notify {title, text}` —— 按设置分发声音提示音与音箱文字，供外部脚本/其他插件触发提醒。
+> 通知入口：`POST /api/dsh-music/notify {title, text}` —— 按设置分发声音提示音，供外部脚本/其他插件触发提醒。
 
 ## HTTP API（同源 `/api/dsh-music/*`）
 
@@ -121,18 +115,15 @@
 | `POST /auth/qq` | QQ Cookie 保存 |
 | `POST /like/set` · `GET /like/check` | 网易红心（双向同步用） |
 | `POST /bridge/report` · `GET /bridge/poll` · `POST /bridge/command` | 浏览器↔宿主桥 |
-| `GET /settings` · `POST /settings/save` | 插件设置：声音通知 / 音箱文字 / 定时任务 / 反向推送 四开关 |
+| `GET /settings` · `POST /settings/save` | 插件设置：声音通知 / 定时任务 / 反向推送 开关 |
 | `GET /providers` | 列出已注册音源及其启用态（id / label / enabled） |
 | `POST /providers/toggle` | 运行时启停某音源 `{id, enabled}`，持久化后聚合搜索仅走启用源 |
 | `GET /schedule` | 定时任务快照（闹钟列表 + 睡眠剩余） |
 | `POST /alarm/add` · `POST /alarm/remove` | 音乐闹钟管理 |
 | `POST /sleep/set` · `POST /sleep/clear` | 睡眠定时器 |
-| `POST /notify` | 触发双通道提醒（按开关分发） |
-| `POST /halo/notify/dismiss` | 消除置顶通知（恢复歌词/时钟） |
+| `POST /notify` | 触发声音提醒（按开关分发） |
 | `POST /notify/sound/upload` · `GET /notify/sound/info` | 自定义提示音：上传（魔数校验）与状态查询 |
 | `GET /notify/sound/file` · `POST /notify/sound/reset` | 取回音频本体 / 恢复内置提示音 |
-| `GET /halo/status` · `POST /halo/config` | 花再状态/配置 |
-| `POST /halo/lyric` · `/halo/song` · `/halo/state` · `/halo/command` | 花再事件与花活儿 |
 
 数据存储：登录态、曲库列表、播放统计、插件设置、闹钟均在 `$DSH_HOME/dsh-music-huazai/` 下，纯本地。
 
@@ -141,7 +132,6 @@
 ```powershell
 pnpm exec tsx scripts/smoke-m2.ts   # 平台层：搜索/取流/歌词/登录态（真实API）
 pnpm exec tsx scripts/smoke-m4.ts   # 歌词解析：LRC/YRC/翻译对齐（21项断言）
-pnpm exec tsx scripts/smoke-m6.ts   # 花再协议：包构建/校验/emoji清洗（无需硬件）
 ```
 
 诊断脚本（登录/音箱排障时用）：
@@ -150,7 +140,6 @@ pnpm exec tsx scripts/smoke-m6.ts   # 花再协议：包构建/校验/emoji清�
 pnpm exec tsx scripts/diag-qr.ts          # 网易/QQ 扫码三步链路（无需扫码）
 pnpm exec tsx scripts/diag-qq-prod.ts     # QQ 扫码生产路径轮询状态
 pnpm exec tsx scripts/diag-netease-auth.ts # 已存网易云 Cookie 有效性核验
-pnpm exec tsx scripts/diag-halo-sync.ts   # 花再全链路：加载→连接→下发文字（真实硬件）
 ```
 
 > 无头浏览器综合 E2E（需先 `pnpm build` 并 `powershell -File scripts/dev-server.ps1` 启动 dsh web）：
@@ -163,19 +152,14 @@ pnpm exec tsx scripts/diag-halo-sync.ts   # 花再全链路：加载→连接→
 
 | 问题 | 处理 |
 |---|---|
-| 音箱切歌信息显示 `？？` | 固件不支持 4 字节 UTF-8（emoji），已在协议层清洗非 BMP 字符 |
-| 文字颜色字节必须为 0（白） | 非 0 会触发固件复位并掉线（协议层已固化） |
-| 氛围灯等 v2 特性连续失败 | 自动降级禁用该特性，保住歌词通道 |
-| 音箱状态一直「未连接」 | 设置页会显示具体原因（node-hid 加载失败/未找到设备/打开失败）；依赖 node-hid ≥3（自带预编译二进制，旧版 1.x 在无构建工具的机器上枚举必败） |
 | QQ 扫码手机端提示已过期 | 请用**手机QQ**的扫一扫（互联授权码仅手机QQ可弹确认页）；二维码生成时已绑定 `pt_login_sig` 会话，若仍过期点重新获取或改粘贴 Cookie |
 | QQ VIP 曲目取流为空 | 属预期：在「账号」Tab 粘贴 Cookie 后重试 |
 | 酷狗曲目可搜不可播 | 其播放接口需签名/dfid，轻量手段无法取直链；酷狗仅作搜索发现源，播放回退至网易云/QQ |
 
 ## 致谢
 
-- **[Mineradio](https://github.com/XxHuberrr/Mineradio)** — 本项目大量源代码移植自它：平台 API 层（QQ fcg 签名直连、聚合搜索）、逐字卡拉OK同步算法（YRC/QRC 解析、词级插值）、花再音箱桥接（halo-sync 模式与 HID 协议）。感谢原作者的出色工作。
+- **[Mineradio](https://github.com/XxHuberrr/Mineradio)** — 本项目大量源代码移植自它：平台 API 层（QQ fcg 签名直连、聚合搜索）、逐字卡拉OK同步算法（YRC/QRC 解析、词级插值）。感谢原作者的出色工作。
 - [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) — Cordis 插件体系与 Web UI 插槽
-- [HaloLyricSync](https://github.com/nxz1026/HaloLyricSync) / [HaloPixelToolBox](https://github.com/XFEstudio/HaloPixelToolBox) / Seraph310/halo-pixelbar-mcp — 花再 HID 协议
 - [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) — 网易云 weapi/eapi 协议参考（本项目已原生复刻其加密与请求约定，零运行时依赖）
 
 ## 开源许可

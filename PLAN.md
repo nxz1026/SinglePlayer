@@ -19,7 +19,6 @@
 | 聚合搜索去重打分 | Mineradio `scoreSongSearchResult` | 算法移植 |
 | LRC/YRC/QRC 解析 | Mineradio `00-lyrics-fetch-parse.js` | 纯函数移植 |
 | 卡拉OK同步算法 | Mineradio 二分定位+词级插值+词宽测量 | Canvas2D 重写渲染（不搬 Three.js） |
-| 花再音箱同步 | Mineradio `halo-sync-bridge.js` + 主进程 node-hid；协议同 HaloPixelToolBox | 浏览器半推行变更，宿主半 node-hid 写 HID 包 |
 | 插件机制/UI插槽 | dsh Cordis + slots 体系 | 原生使用 |
 
 ## 3. 目录结构
@@ -31,7 +30,7 @@
 │  ├─ index.ts             # apply(ctx)：服务+工具注册
 │  ├─ bridge.ts            # 浏览器↔宿主桥（命令队列+上报）
 │  ├─ log.ts               # 统一日志
-│  ├─ routes.ts            # HTTP 路由（BFF、音频代理、登录、推荐、花再）
+│  ├─ routes.ts            # HTTP 路由（BFF、音频代理、登录、推荐）
 │  ├─ tools.ts             # AI 工具集（5 个工具）
 │  ├─ providers/
 │  │  ├─ types.ts          # 统一模型与桥类型
@@ -43,9 +42,6 @@
 │  ├─ store/
 │  │  ├─ auth.ts           # 登录态持久化（$DSH_HOME 下）
 │  │  └─ library.ts        # 本地曲库多列表 + 播放统计
-│  └─ halo/
-│     ├─ protocol.ts       # HID 协议包构建
-│     └─ sync.ts           # 花再同步服务（设备管理+事件入口）
 ├─ client/                 # 浏览器半
 │  ├─ index.tsx            # 入口：挂载悬浮按钮 + 启动桥
 │  ├─ PlayerPanel.tsx      # 主面板（搜索/曲库/队列/账号/设置 Tab）
@@ -53,7 +49,6 @@
 │  ├─ player.ts            # HTMLAudio 引擎 + 播放队列 + 音源回退
 │  ├─ api.ts               # 类型化 fetch 封装
 │  ├─ library.ts           # 曲库客户端 store
-│  ├─ haloBridge.ts        # 花再 200ms 换行推送桥
 │  └─ qrLogin.ts           # 网易扫码登录生命周期
 ```
 
@@ -73,12 +68,6 @@
 `music_search` / `music_play` / `music_control`（合并 pause/resume/next/prev）/
 `music_now_playing` / `music_lyric`
 
-### 4.4 花再（HALO PIXELBAR）音箱歌词同步
-- **宿主半**：`node-hid` 打开设备，实现 64 字节文本包/布局包/UI 模式包协议；设备自动探测（vendor 关键词 halo/pixel/花再/pixelbar）
-- **浏览器半**：200ms tick —— `currentTime` 定位当前行，**仅换行时** POST 到宿主 `/api/dsh-music/halo/*`；播放/暂停状态、切歌信息过渡（"🎵 歌名 - 歌手" 3s）、音量联动、封面主色跟随
-- 花活儿：主题场景、频谱律动、氛围灯（复用 Mineradio 主进程协议实现）
-- 所有调用尽力而为：设备不在线/开关关闭时空转，不影响播放器
-
 ## 5. 里程碑
 
 | 里程碑 | 内容 | 验收 |
@@ -88,12 +77,10 @@
 | M3 | 播放器 UI | 搜索→点播→队列→控制条可用 |
 | M4 | 逐字卡拉OK歌词 | YRC/QRC 逐字染色滚动 |
 | M5 | AI 工具集 + README | 对话"放一首XX"可播 |
-| M6 | 花再音箱同步 | 播放时 PIXELBAR 实时翻行显示歌词 |
 
 ## 6. v1 范围
 
 - ✅ 网易云 + QQ 音乐（搜索/取流/歌词/登录/红心收藏）
 - ✅ 扫码（网易）/Cookie 粘贴（QQ）登录
 - ✅ 逐字卡拉OK + 翻译
-- ✅ 花再音箱歌词同步（行级推送 + 切歌过渡 + 基础花活儿）
 - ❌ 酷狗/汽水/Spotify（v2）、桌面歌词窗口（v2）、音源回退（v2）

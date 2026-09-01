@@ -11,7 +11,6 @@ import { Fab, readFabPos } from './Fab.tsx'
 import type { FabPos } from './Fab.tsx'
 import { Surface } from './PlayerPanel.tsx'
 import { startAiBridge } from './player.ts'
-import { startHaloBridge } from './haloBridge.ts'
 
 /** 浏览器半依赖的服务。 */
 export const inject = [] as const
@@ -39,7 +38,6 @@ export function apply(ctx: ClientContext): void {
   container.dataset.dshPlugin = 'dsh-music-huazai'
   document.body.appendChild(container)
   startAiBridge()
-  startHaloBridge()
   const root = createRoot(container)
   root.render(<App />)
   ctx.effect(() => () => {

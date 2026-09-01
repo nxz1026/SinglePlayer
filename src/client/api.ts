@@ -71,12 +71,6 @@ export const api = {
   neteaseLikeCheck(songId: string): Promise<{ liked: boolean }> {
     return get(`/like/check?id=${encodeURIComponent(`netease:${songId}`)}`)
   },
-  haloStatus(): Promise<{ halo: HaloStatus }> {
-    return get('/halo/status')
-  },
-  haloSetConfig(config: Record<string, unknown>): Promise<{ config: Record<string, unknown> }> {
-    return post('/halo/config', { config })
-  },
   getPluginSettings(): Promise<{ settings: PluginSettings }> {
     return get('/settings')
   },
@@ -127,28 +121,6 @@ export const api = {
   chartTracks(id = '3778678', limit = 50): Promise<{ tracks: Track[] }> {
     return get(`/chart?id=${encodeURIComponent(id)}&limit=${limit}`)
   },
-  /** 花再音响（HID 屏幕）歌词推送：尽力而为，失败静默，绝不阻塞播放。 */
-  haloSong(name: string, artist: string): Promise<void> {
-    return fetch(`${BASE}/halo/song`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, artist }),
-    }).then(() => {}).catch(() => {})
-  },
-  haloLyric(text: string): Promise<void> {
-    return fetch(`${BASE}/halo/lyric`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
-    }).then(() => {}).catch(() => {})
-  },
-  haloState(playing: boolean): Promise<void> {
-    return fetch(`${BASE}/halo/state`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ playing }),
-    }).then(() => {}).catch(() => {})
-  },
   getLists(): Promise<{ lists: LibraryList[]; recent: Track[]; plays: Record<string, { count: number; lastAt: number }> }> {
     return get('/lists')
   },
@@ -187,30 +159,9 @@ export interface ProviderInfo {
   enabled: boolean
 }
 
-export interface HaloStatus {
-  enabled: boolean
-  connected: boolean
-  simulated: boolean
-  playing: boolean
-  devices: number
-  /** node-hid 加载/枚举失败原因（空串=正常）。 */
-  hidError?: string
-  /** 最近一次连接失败原因（设备未找到/打开失败）。 */
-  connectError?: string
-  config?: {
-    align?: string
-    dynamicScroll?: boolean
-    idleClockWhenPaused?: boolean
-    maxCharsPerLine?: number
-    notifyDurationSec?: number
-    screenColor?: { r: number; g: number; b: number }
-  }
-}
-
 /** 插件设置（通知 / 定时 / 反向推送开关）。 */
 export interface PluginSettings {
   notifySound: boolean
-  notifyHaloText: boolean
   schedulerEnabled: boolean
   reversePushEnabled: boolean
   enabledProviders?: string[]

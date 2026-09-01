@@ -56,10 +56,6 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.6.2
-    optionalDependencies:
-      node-hid:
-        specifier: ^3.4.0
-        version: 3.4.0
 
 packages:
 
@@ -1183,15 +1179,6 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
-  node-addon-api@8.9.2:
-    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
-    engines: {node: ^18 || ^20 || >= 21}
-
-  node-hid@3.4.0:
-    resolution: {integrity: sha512-Br7EO3bJARAJBdtcsGzF/Vs5TjfbkaMdglqLQ+Rk9GOGgVqv5DxYUVH5znLerJU+OfBWw8sd552Ujcprz1bG9g==}
-    engines: {node: '>=10.16'}
-    hasBin: true
-
   obug@2.1.4:
     resolution: {integrity: sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==}
     engines: {node: '>=12.20.0'}
@@ -1215,11 +1202,6 @@ packages:
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
-
-  pkg-prebuilds@1.1.0:
-    resolution: {integrity: sha512-jyai+KTQ2OwbN6iRYw88XbYOMgtpoSYJpjYebx7d9ihqz3txNi3ucsBt3va0iVWe6svSlaqpijMHFF/eJCMZzg==}
-    engines: {node: '>= 14.15.0'}
-    hasBin: true
 
   playwright-core@1.62.1:
     resolution: {integrity: sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==}
@@ -2361,15 +2343,6 @@ snapshots:
     dependencies:
       js-tokens: 3.0.0
 
-  node-addon-api@8.9.2:
-    optional: true
-
-  node-hid@3.4.0:
-    dependencies:
-      node-addon-api: 8.9.2
-      pkg-prebuilds: 1.1.0
-    optional: true
-
   obug@2.1.4: {}
 
   p-limit@2.2.0:
@@ -2385,9 +2358,6 @@ snapshots:
   path-exists@4.0.0: {}
 
   picomatch@4.0.5: {}
-
-  pkg-prebuilds@1.1.0:
-    optional: true
 
   playwright-core@1.62.1: {}
 

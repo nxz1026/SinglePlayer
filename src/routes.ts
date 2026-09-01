@@ -15,7 +15,6 @@ import type { BridgeCommand, NowPlayingReport } from './providers/types.ts'
 import type { ProviderId, Quality } from './providers/types.ts'
 import { saveAuth } from './store/auth.ts'
 import { buildRecommendSections, buildShuffleMix } from './recommend.ts'
-import { makeHaloRoutes } from './halo/routes.ts'
 import { getSettings, patchSettings } from './store/settings.ts'
 import type { PluginSettings } from './store/settings.ts'
 import { addAlarm, cancelSleepTimer, removeAlarm, scheduleSnapshot, startSleepTimer } from './scheduler.ts'
@@ -268,8 +267,6 @@ export function makeRoutes(ctx: Context): WebRoute[] {
       const text = String(body.text ?? '').slice(0, 120)
       return dispatchNotify(title, text)
     }),
-
-    ...makeHaloRoutes(),
   ]
   return routes
 }

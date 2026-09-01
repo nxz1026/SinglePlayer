@@ -83,20 +83,16 @@ audio.preload = 'auto'
 audio.volume = state.volume
 
 let currentTrackId = ''
-let lastHaloLine = ''
 
 audio.addEventListener('timeupdate', () => {
   set({ currentTime: audio.currentTime })
-  pushHaloLyricLine()
 })
 audio.addEventListener('durationchange', () => set({ duration: audio.duration || 0 }))
 audio.addEventListener('play', () => {
   set({ playing: true })
-  void api.haloState(true).catch(() => {})
 })
 audio.addEventListener('pause', () => {
   set({ playing: false })
-  void api.haloState(false).catch(() => {})
 })
 audio.addEventListener('ended', () => onEnded())
 
@@ -268,29 +264,6 @@ function commitPlay(track: Track, url: string): void {
   set({ loadingUrl: false })
   api.recordPlay(track)
   void loadLyric(track.id)
-  void pushHaloNowPlaying(track)
-}
-
-/** 推歌名 + 播放态到花再音响（HID 屏幕）；失败静默。 */
-function pushHaloNowPlaying(track: Track): void {
-  void api.haloSong(track.name, track.artists.join(' / ')).catch(() => {})
-  void api.haloState(true).catch(() => {})
-  lastHaloLine = ''
-}
-
-/** 当前歌词行变化即推送到花再音响（去重）。 */
-function pushHaloLyricLine(): void {
-  const lines = currentLyricLines()
-  const time = audio.currentTime
-  let text = ''
-  for (const line of lines) {
-    if (line.t <= time) text = line.text
-    else break
-  }
-  if (text && text !== lastHaloLine) {
-    lastHaloLine = text
-    void api.haloLyric(text).catch(() => {})
-  }
 }
 
 /** 随便听听：服务端合成曲库+红心 Top30 与 6 首随机的混合列表，一键替换队列并开播。 */
@@ -571,7 +544,7 @@ export function setQualityPref(quality: string): void {
   localStorage.setItem('dshm-quality', quality)
 }
 
-/** 歌词显示开关（仅控制界面；不影响花再音箱同步）。 */
+/** 歌词显示开关（仅控制界面）。 */
 export function toggleShowLyric(): void {
   const next = !state.showLyric
   localStorage.setItem('dshm-showlyric', next ? '1' : '0')
